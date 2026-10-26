@@ -41,7 +41,7 @@ PYTHONPATH=src python3 tests/simulate_mcp_attack.py --events 2000
 | `src/bpf/xsypher.bpf.c` | restricted C | tracepoints, LSM hooks, maps, verifier-safe helpers |
 | `src/collector/` | C++20 | libbpf lifecycle, ring buffer, enrichment, UDS server |
 | `src/engine/` | Python 3.12 | decode, lineage, rules, mitigation, metrics, TUI |
-| `config/rules.yaml` | YAML | detection content — most contributions land here |
+| `config/rules.yaml` | YAML | detection content; most contributions land here |
 | `tests/` | Python | unit + end-to-end proof |
 | `deploy/`, `scripts/` | YAML/sh | packaging and verification |
 
@@ -82,7 +82,7 @@ Checklist before opening a PR:
 
 Rules are matched against `exe` (lineage-resolved basename for non-exec events), `comm`, `filename`,
 `args`, destination address/port, uid and the ancestry chain. Remember that **ports and addresses are
-in network byte order on the wire** — the engine already presents them in host form, but anything you
+in network byte order on the wire**. The engine already presents them in host form, but anything you
 write in C or C++ must use the raw constants (see `XSYPHER_IMDS_IPV4_RAW`).
 
 ---
@@ -95,8 +95,8 @@ Any change to a struct, constant or enum is a **breaking change** and requires a
 2. Mirror the change in `src/engine/abi.py` (fields, explicit padding, offsets).
 3. Update the `XSYPHER_STATIC_ASSERT` block in C and the `assert`/offset map in Python.
 4. Update the expected sizes/offsets in `tests/test_wire_protocol.py` (the sizes are literal
-   integers on purpose — they force this review).
-5. Update the ABI tables in `README.md` if sizes or offsets changed.
+   integers on purpose, and that is what forces this review).
+5. Update the structure and constant tables in `docs/ARCHITECTURE.md` if sizes or offsets changed.
 6. Add a note to `CHANGELOG`-style section of the PR description describing the migration for any
    engine/collector that may be deployed out of step.
 
@@ -110,7 +110,7 @@ keep the structures `packed, aligned(8)`.
 The verifier is the reviewer that matters. Keep changes verifier-friendly:
 
 - bounded, preferably `#pragma unroll`ed loops with constant trip counts;
-- no direct dereference of user or kernel pointers — always `bpf_probe_read_user*` /
+- no direct dereference of user or kernel pointers; always `bpf_probe_read_user*` /
   `BPF_CORE_READ*`;
 - `BPF_CORE_READ` for every `task_struct`/`file`/`sock` field so CO-RE keeps working across kernels;
 - reserve → fill → submit; never submit a partially filled ring buffer record;
