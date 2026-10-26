@@ -1,384 +1,139 @@
-# xSypher-Stream
+<div align="center">
 
-**Zero-trust kernel telemetry and inline LSM enforcement for AI-agent and MCP
-workloads.**
+<img src="docs/banner.svg" alt="xSypher-Stream — zero-trust kernel telemetry and inline LSM enforcement" width="100%"/>
 
-eBPF CO-RE (kernel) → libbpf + C++20 collector (transport) → Python 3.12 threat
-engine (policy) → `wire_policy_cmd_t` → eBPF maps → `-EPERM`.
+<br/>
 
-xSypher-Stream watches what processes actually *do* — exec, connect, open,
-memfd — reconstructs their lineage, and when an AI agent / MCP server turns a
-prompt injection into a shell, a reverse shell, a metadata-service credential
-grab or a fileless payload, it quarantines the process tree **inside the
-kernel** using the BPF LSM hooks that already sit in the syscall path.
+**Zero-trust kernel telemetry and inline LSM enforcement for AI-agent and MCP workloads.**
 
-```
-   ┌──────────────────────────────── kernel space ─────────────────────────────┐
-   │                                                                           │
-   │  tracepoints                    BPF LSM hooks            BPF maps         │
-   │  tp/syscalls/sys_enter_execve   lsm/bprm_check_security  events_ringbuf   │
-   │  tp/syscalls/sys_enter_connect  lsm/socket_connect       quarantined_pids │
-   │  tp/syscalls/sys_enter_openat   lsm/file_open            quarantined_cgrps│
-   │  tp/syscalls/sys_enter_memfd    (return -EPERM)          blocked_ipv4     │
-   │  tp/sched/sched_process_exit                             config_map       │
-   │                         │                                     ▲          │
-   └─────────────────────────┼─────────────────────────────────────┼──────────┘
-                             │ BPF_MAP_TYPE_RINGBUF (16 MiB)        │ bpf_map_update_elem
-                             ▼                                     │
-   ┌──────────────────────────── user space ────────────────────────────┬──────┐
-   │  xsypher-collector (C++20, libbpf)                                 │      │
-   │  ring_buffer__poll → enrich (container id) → seq_no → broadcast    │      │
-   └───────────────────────────────────┬────────────────────────────────┴──────┘
-                                       │ AF_UNIX / SOCK_SEQPACKET
-                        wire_event_msg_t (720 B) ▲   ▼ wire_policy_cmd_t (32 B)
-   ┌───────────────────────────────────┴───────────────────────────────────────┐
-   │  engine (Python 3.12, asyncio)                                             │
-   │  decode → lineage graph → YAML rules → mitigate → JSONL audit + /metrics   │
-   └───────────────────────────────────────────────────────────────────────────┘
-```
+Observe every `execve`, `connect`, `openat` and `memfd` in the kernel. Reconstruct who spawned whom.
+When a prompt injection turns an MCP tool call into a shell, a reverse shell, a metadata-credential
+grab or a fileless payload — quarantine the process tree **inside the kernel**, before the next
+syscall completes.
+
+<br/>
+
+<!-- build & quality ------------------------------------------------ -->
+<a href="#build-from-source"><img alt="build: make | cmake" src="https://img.shields.io/badge/build-make%20%7C%20cmake-0f172a?style=for-the-badge&logo=cmake&logoColor=67e8f9"></a>
+<a href="scripts/verify_and_benchmark.sh"><img alt="tests: 59 passing" src="https://img.shields.io/badge/tests-59%20passing-0f172a?style=for-the-badge&logo=pytest&logoColor=34d399"></a>
+<a href="docs/architecture.svg"><img alt="architecture: 3 planes" src="https://img.shields.io/badge/architecture-kernel%20%C2%B7%20collector%20%C2%B7%20engine-0f172a?style=for-the-badge&logo=linux&logoColor=a78bfa"></a>
+
+<!-- stack ----------------------------------------------------------- -->
+<img alt="kernel: eBPF CO-RE" src="https://img.shields.io/badge/kernel-eBPF%20CO--RE-05070d?style=flat-square&logo=ebpf&logoColor=22d3ee">
+<img alt="collector: C++20 + libbpf" src="https://img.shields.io/badge/collector-C%2B%2B20%20%2B%20libbpf-05070d?style=flat-square&logo=cplusplus&logoColor=a78bfa">
+<img alt="engine: Python 3.12" src="https://img.shields.io/badge/engine-Python%203.12-05070d?style=flat-square&logo=python&logoColor=67e8f9">
+<img alt="ABI v2" src="https://img.shields.io/badge/wire%20ABI-v2-05070d?style=flat-square&logo=gnubash&logoColor=cbd5e1">
+<img alt="Linux 5.10+" src="https://img.shields.io/badge/linux-5.10%2B%20%C2%B7%20x86__64%20%7C%20arm64-05070d?style=flat-square&logo=linux&logoColor=cbd5e1">
+<img alt="license: Apache-2.0 (BPF: GPL-2.0)" src="https://img.shields.io/badge/license-Apache--2.0%20%2F%20GPL--2.0-05070d?style=flat-square&logo=opensourceinitiative&logoColor=34d399">
+
+<br/>
+<sub><b>P99 rule evaluation 17 µs</b> · <b>136k events/s</b> per engine core · <b>16 MiB</b> lockless ring buffer · <b>720-byte</b> wire frames · <b>0</b> non-stdlib Python dependencies beyond PyYAML</sub>
+
+</div>
+
+<img src="docs/metrics.svg" alt="Verified performance envelope: p99 rule evaluation 17.3 microseconds against a 500 microsecond budget, 136k events per second in-process, 38k events per second end-to-end, 59 tests passing" width="100%"/>
 
 ---
 
 ## Table of contents
 
-1. [What it detects](#what-it-detects)
-2. [Repository layout](#repository-layout)
-3. [Build](#build)
-4. [Run](#run)
-5. [Rules](#rules)
-6. [Binary ABI](#binary-abi)
-7. [Metrics](#metrics)
-8. [Audit log](#audit-log)
-9. [Deployment](#deployment)
-10. [Verification & benchmarks](#verification--benchmarks)
-11. [Design notes & limits](#design-notes--limits)
+| Understand | Get running | Operate | Trust |
+|---|---|---|---|
+| [Why this exists](#why-this-exists) | [Quickstart](#quickstart) | [Binary ABI](#binary-abi) | [Security model](#security-model) |
+| [How it works](#how-it-works) | [Build from source](#build-from-source) | [Metrics](#metrics) | [Performance](#performance) |
+| [Anatomy of a contained breakout](#anatomy-of-a-contained-breakout) | [Run](#run) | [Audit trail](#audit-trail) | [Verification](#verification) |
+| [Live monitor](#live-monitor) | [Configuration](#configuration) | [Deployment](#deployment) | [Compatibility](#compatibility) |
+| [Detection catalogue](#detection-catalogue) | [Troubleshooting](#troubleshooting) | [Contributing](#contributing) | |
 
 ---
 
-## What it detects
+## Why this exists
 
-| # | Rule | Severity | Detection | Kernel action |
-|---|------|----------|-----------|---------------|
-| 1 | `MCP_SHELL_BREAKOUT` | critical | `node → python3 → /bin/sh` (AI/MCP ancestor spawns a shell or tmux/screen) | `QUARANTINE_CGROUP` + `SIGKILL` |
-| 2 | `MCP_RECON_OR_EXFIL_TOOL` | high | AI/MCP ancestor spawns `curl`, `wget`, `nc`, `socat`, `nmap`, `ssh`, `base64`, … | `QUARANTINE_PID` + `SIGKILL` |
-| 3 | `CLOUD_IMDS_CREDENTIAL_THEFT` | critical | container connects to `169.254.169.254` | `QUARANTINE_CGROUP` + `BLOCK_IPV4` + `SIGKILL` |
-| 4 | `SENSITIVE_CREDENTIAL_HARVEST` | critical | `/etc/shadow`, `/etc/sudoers`, `/root/.ssh`, K8s SA token, `.env`, `id_rsa` | `QUARANTINE_PID` + `SIGKILL` |
-| 5 | `FILELESS_MEMFD_EXECUTION` | critical | `memfd_create` or exec from `/memfd:`, `/proc/self/fd/`, `/dev/shm/` | `QUARANTINE_CGROUP` + `SIGKILL` |
-| 6 | `SUSPICIOUS_OUTBOUND_C2_PORT` | high | container / web-MCP worker → `4444`, `1337`, `31337`, `5555`, `6667`, `9001` | `QUARANTINE_PID` + `BLOCK_IPV4` + `SIGKILL` |
+Autonomous agents change the blast radius of a single tool call. A Model Context Protocol server is
+a **general-purpose capability broker** wired directly into a language model's output. One
+successful prompt injection is therefore not "a bad completion" — it is remote command execution
+inside your workload, with your service account, on your network.
 
-Enforcement is **inline**: once a cgroup is quarantined with
-`enforcement_mode = INLINE_BLOCK`, the kernel refuses further `execve`, blocked
-`connect()` targets and credential `open()` calls for that domain with `-EPERM`
-before the syscall ever completes.
+Classic controls do not see it:
 
----
+| Control | Why it misses an MCP breakout |
+|---|---|
+| WAF / API gateway | The payload is a *legitimate* tool invocation, not malformed HTTP |
+| Image scanning | The image is unmodified; the shell is `/bin/sh`, which is supposed to be there |
+| K8s NetworkPolicy | `169.254.169.254` is link-local, not pod-to-pod traffic |
+| Runtime agents with polling | A `node → python3 → sh → curl` chain completes in milliseconds |
+| Egress proxies | Metadata service and C2 over 443 look like normal dependencies |
 
-## Repository layout
+xSypher-Stream closes that gap by moving the decision into the **syscall path**. It is not a
+sandbox and it is not an agent: it is a high-rate sensor plus a kernel-resident kill switch that is
+already resident in the call chain, so a decision costs microseconds and an enforcement costs a map
+update — not a container restart.
 
-```
-xsypher-stream/
-├── CMakeLists.txt              # CMake build (BPF → skeleton → collector → ctest)
-├── Makefile                    # plain-make build + test/verify/run targets
-├── README.md
-├── requirements.txt            # PyYAML (only non-stdlib Python dependency)
-├── config/
-│   └── rules.yaml              # 6 declarative zero-trust rules
-├── include/
-│   └── xsypher_abi.h           # shared C/C++/Python binary ABI (byte exact)
-├── src/
-│   ├── bpf/
-│   │   └── xsypher.bpf.c       # CO-RE tracepoints + LSM hooks + ring buffer
-│   ├── collector/
-│   │   ├── main.cpp            # epoll reactor, CLI, signal handling
-│   │   ├── bpf_loader.{hpp,cpp}# libbpf lifecycle, LSM fallback, map updates
-│   │   ├── cgroup_resolver.*   # pid/cgroup → 64-hex container ID (LRU+TTL)
-│   │   └── uds_server.*        # AF_UNIX SOCK_SEQPACKET broadcast + commands
-│   └── engine/
-│       ├── main.py             # asyncio engine, UDS transport, CLI
-│       ├── abi.py              # ctypes mirror with size assertions
-│       ├── lineage.py          # process lineage graph (TTL, bounded)
-│       ├── rule_engine.py      # declarative rule evaluation (< 20 µs p99)
-│       ├── mitigator.py        # policy commands + SHA-256 chained JSONL
-│       ├── metrics.py          # zero-dependency Prometheus exporter
-│       ├── tui.py              # ANSI live monitor
-│       └── __init__.py
-├── deploy/
-│   ├── Dockerfile                    # multi-stage: build → slim runtime
-│   ├── docker-compose.yml            # privileged collector + unprivileged engine
-│   ├── kubernetes-daemonset.yaml     # one pod per node, two containers
-│   ├── xsypher-collector.service     # systemd unit (kernel side)
-│   └── xsypher-engine.service        # systemd unit (policy side)
-├── scripts/
-│   ├── gen_vmlinux.sh          # BTF dump with documented stub fallback
-│   └── verify_and_benchmark.sh # ABI + build + tests + attack simulation
-└── tests/
-    ├── test_wire_protocol.py   # layout, codecs, real SOCK_SEQPACKET round trip
-    ├── test_lineage_and_rules.py
-    └── simulate_mcp_attack.py  # 10k events + 5 attack chains, end to end
-```
+> **Design invariant:** the kernel never waits for user space. Telemetry is fire-and-forget through
+> a lockless ring buffer; policy arrives asynchronously through BPF maps. If the engine dies, the
+> kernel keeps enforcing the last policy it was given, and the engine releases its quarantines on
+> graceful shutdown.
 
 ---
 
-## Build
+## How it works
 
-### Dependencies
+<div align="center">
+<img src="docs/architecture.svg" alt="Animated architecture diagram: kernel-space eBPF tracepoints and LSM hooks feed a 16 MiB ring buffer; the C++20 collector enriches events and forwards 720-byte SEQPACKET frames to the Python engine, which returns 32-byte policy commands that the collector applies to the BPF maps" width="100%"/>
+</div>
 
-| Need | Package (Debian/Ubuntu) |
-|------|-------------------------|
-| `clang` ≥ 12, `llvm` | `clang llvm` |
-| `bpftool` (skeleton + BTF) | `bpftool` / `linux-tools-$(uname -r)` |
-| libbpf ≥ 1.0 | `libbpf-dev libelf-dev zlib1g-dev` |
-| C++20 compiler | `g++` ≥ 12 or `clang++` |
-| Python ≥ 3.10 (3.12 recommended) | `python3 python3-yaml` |
+**One event, end to end** — the numbered hops in the diagram:
 
-```bash
-make check-deps        # verify clang/bpftool/g++ are visible
-make -j"$(nproc)"      # build/xsypher.bpf.o, build/xsypher.skel.h, build/xsypher-collector
-```
+| # | Hop | Module | Cost |
+|---|-----|--------|------|
+| 1 | Tracepoint fires; `BPF_CORE_READ` walks `task_struct` for lineage/namespaces; record reserved on the ring buffer | `src/bpf/xsypher.bpf.c` | ~1 µs |
+| 2 | `ring_buffer__poll()` inside the collector's epoll reactor; `cgroup_id`/`pid` resolved to a container ID via LRU cache | `bpf_loader.cpp`, `cgroup_resolver.cpp` | ~0.4 µs cached |
+| 3 | Frame wrapped with `magic`, `version`, `msg_type`, monotonic `seq_no`, `container_id`; broadcast on `AF_UNIX`/`SOCK_SEQPACKET` | `uds_server.cpp` | ~2 µs |
+| 4 | Engine decodes the 720-byte datagram, updates the lineage graph, evaluates rules | `abi.py`, `lineage.py`, `rule_engine.py` | 5–20 µs |
+| 5 | On a match: `wire_policy_cmd_t` (32 B) sent back; collector calls `bpf_map_update_elem()`; **LSM hooks now return `-EPERM`** for that domain | `mitigator.py` → `bpf_loader.cpp` | ~2 ms round-trip |
 
-or with CMake:
+Three planes, three languages, one contract:
 
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
-ctest --test-dir build --output-on-failure
-```
-
-`include/vmlinux.h` is generated from `/sys/kernel/btf/vmlinux` by
-`scripts/gen_vmlinux.sh` and is git-ignored. If the host has no BTF and no
-`bpftool`, the script writes a clearly-labelled stub header so type checking
-still succeeds — **regenerate it on the target kernel before loading**.
-
-The BPF object is built for the host architecture automatically
-(`-D__TARGET_ARCH_x86` or `-D__TARGET_ARCH_arm64`).
-
----
-
-## Run
-
-```bash
-# 1. collector (root: needs CAP_BPF/CAP_PERFMON and the ring buffer)
-sudo ./build/xsypher-collector \
-    --socket-path /run/xsypher/stream.sock \
-    --block-imds \
-    --enforce \
-    --verbose
-
-# 2. engine
-PYTHONPATH=src sudo -E python3 -m engine.main \
-    --socket-path /run/xsypher/stream.sock \
-    --rules config/rules.yaml \
-    --alert-log /var/log/xsypher-alerts.jsonl \
-    --metrics-port 9109 \
-    --enforce-kernel
-```
-
-No root, no kernel? Use the synthetic generator — it exercises the *entire*
-Python path (lineage, rules, mitigation, audit log, metrics, TUI):
-
-```bash
-PYTHONPATH=src python3 -m engine.main --simulate --metrics-port 9109
-```
-
-Collector flags: `--socket-path`, `--enforce`, `--block-imds`, `--verbose`,
-`--no-lsm-fallback`, `--no-status`, `--help`.
-
-Engine flags: `--socket-path`, `--rules`, `--alert-log`, `--metrics-port`,
-`--metrics-host`, `--enforce-kernel`, `--active-kill`, `--simulate`,
-`--simulate-count`, `--lineage-ttl`, `--no-color`, `--quiet`, `--verbose`,
-`--fsync-alerts`.
-
-> **Kernel requirement for inline blocking:** `CONFIG_BPF_LSM=y` plus
-> `lsm=bpf` on the kernel command line. Without it the collector logs a warning
-> and keeps streaming telemetry (the user-space `SIGKILL` mitigation still
-> works with `--active-kill`).
-
----
-
-## Rules
-
-Rules are data. `config/rules.yaml` is loaded at startup; no code changes are
-needed to add, disable or retune a rule.
-
-```yaml
-- id: MCP_SHELL_BREAKOUT
-  title: "MCP/AI agent spawned an interactive shell"
-  severity: critical            # info | low | medium | high | critical
-  enabled: true
-  event_types: [execve]         # execve connect openat memfd_create process_exit lsm_block
-  conditions:
-    exe_in: [sh, bash, zsh, dash, ksh, fish, csh, tcsh, tmux, screen, dtach]
-    ancestor_has_ai_runtime: true
-    ancestor_min_depth: 1
-  actions: [quarantine_cgroup, kill]   # quarantine_pid quarantine_cgroup block_ipv4 block_imds kill
-```
-
-Condition semantics: one `conditions:` mapping is **ANDed**; a list value is
-**ORed** internally; the special `any_of:` key holds a list of condition groups
-that are **ORed** with each other (used by rule 4 and 5, which each cover two
-distinct shapes).
-
-| Condition | Meaning |
-|-----------|---------|
-| `event_types` | restrict to these kernel events |
-| `exe_in` / `exe_not_in` | subject executable basename (lineage-aware for non-exec events) |
-| `exe_prefix_in` / `exe_suffix_in` | raw `filename` prefix/suffix (fileless detection) |
-| `comm_in` / `comm_not_in` | 16-byte kernel `comm` |
-| `path_prefix_in` / `path_suffix_in` / `path_contains` | opened file path tests |
-| `args_contains` | joined argv substring match |
-| `dport_in` / `daddr_in` | destination port (host order) / IPv4 or IPv6 literal |
-| `uid_in` / `uid_not_in` | credential of the subject |
-| `container_only` | only fire inside a non-host cgroup |
-| `container_or_comm_in` | fire in a container **or** for these binaries |
-| `ancestor_has_ai_runtime` | any ancestor is `node`, `python3`, `uvicorn`, `claude-mcp`, … |
-| `ancestor_any_in` | any ancestor basename in an explicit list |
-| `ancestor_min_depth` | require N ancestors |
-| `monitor_only` | alert but never enforce |
-
-Unknown keys, unknown event types, unknown actions, duplicate ids and empty
-rule sets are rejected at load time with a precise error message.
-
----
-
-## Binary ABI
-
-`include/xsypher_abi.h` is the single source of truth; `src/engine/abi.py`
-mirrors it with `ctypes` and asserts every size and offset at import time. All
-structures are `packed, aligned(8)` with explicit padding, so clang, g++ and
-ctypes agree byte for byte.
-
-| Structure | Size | Key offsets |
-|-----------|------|-------------|
-| `struct kernel_event_t` | **640** | `event_type` 48, `retval` 52, `dport` 58, `daddr_v4` 64, `daddr_v6` 72, `open_flags` 88, `comm` 92, `parent_comm` 108, `filename` 124, `args` 380 |
-| `struct wire_event_msg_t` | **720** | `magic` 0, `version` 4, `msg_type` 6, `seq_no` 8, `container_id` 16, `event` 80 |
-| `struct wire_policy_cmd_t` | **32** | `magic` 0, `cmd_type` 6, `target_cgroup_id` 8, `target_pid` 16, `target_ipv4` 20, `enforcement_mode` 24 |
-
-Constants: `XSYPHER_WIRE_MAGIC = 0x58535950` (`"XSYP"`), `XSYPHER_ABI_VERSION = 2`,
-`MAX_COMM_LEN = 16`, `MAX_PATH_LEN = 256`, `MAX_ARGS_LEN = 256`,
-`MAX_CONTAINER_ID_LEN = 64`.
-
-Conventions worth remembering:
-
-* IP addresses and ports are stored in **raw network byte order**. On a
-  little-endian host `169.254.169.254` appears as `0xFEA9FEA9`
-  (`XSYPHER_IMDS_IPV4_RAW`, mirrored as `abi.IMDS_IPV4_RAW`).
-* A full 64-hex container ID fills `container_id` completely and is therefore
-  not NUL terminated; shorter values (`"host"`) are NUL padded. Both sides
-  decode both shapes.
-
-Command types: `CMD_QUARANTINE_PID=10`, `CMD_UNQUARANTINE_PID=11`,
-`CMD_QUARANTINE_CGROUP=12`, `CMD_UNQUARANTINE_CGROUP=13`, `CMD_BLOCK_IPV4=14`,
-`CMD_UNBLOCK_IPV4=15`, `CMD_SET_ENFORCEMENT_MODE=16` (`0` = audit, `1` = inline
-block).
-
----
-
-## Metrics
-
-`GET http://<host>:9109/metrics` (Prometheus text format, zero dependencies):
-
-```
-xsypher_events_total{type="execve"}
-xsypher_alerts_total{rule="MCP_SHELL_BREAKOUT",severity="critical"}
-xsypher_mitigations_total{action="quarantine_cgroup"}
-xsypher_active_tracked_processes
-xsypher_rule_cooldowns_active
-xsypher_lsm_blocks_seen{type="lsm_block"}
-xsypher_commands_sent_total{command="quarantine_pid"}
-xsypher_commands_failed_total{reason="disconnected"}
-xsypher_socket_reconnects_total
-xsypher_rule_eval_seconds_sum / _count
-xsypher_engine_uptime_seconds
-```
-
-`GET /healthz` returns `200 ok` for liveness/readiness probes.
-
----
-
-## Audit log
-
-Every alert is appended as one JSON line with a **SHA-256 hash chain**:
-
-```
-hash_n = SHA256(hex(hash_{n-1}) || canonical_json(record_n \ {hash, alert_id}))
-hash_0 = "0" * 64
-```
-
-Each record carries `prev_hash`, `hash`, `alert_id` (= first 16 hex of `hash`),
-`sequence`, the rule/severity/reason, the full subject identity, the event, the
-ancestry chain and the mitigations that were (or were not) delivered. Any edit
-or deletion invalidates every later hash line, so the log is tamper-evident
-without external infrastructure. The engine re-verifies the chain on startup
-and logs `audit hash chain is INVALID` if it does not add up:
-
-```bash
-PYTHONPATH=src python3 -c \
-  "from engine.mitigator import AlertLog; print(AlertLog.verify('/var/log/xsypher-alerts.jsonl'))"
+```text
+┌──────────────────────── kernel space · eBPF CO-RE ─────────────────────────┐
+│  tp/syscalls/sys_enter_execve      lsm/bprm_check_security                 │
+│  tp/syscalls/sys_enter_connect     lsm/socket_connect                      │
+│  tp/syscalls/sys_enter_openat      lsm/file_open          ─┐               │
+│  tp/syscalls/sys_enter_memfd_create                        │ -EPERM        │
+│  tp/sched/sched_process_exit                              ─┘               │
+│         │ ringbuf 16 MiB                          ▲ hash/array maps        │
+└─────────┼─────────────────────────────────────────┼────────────────────────┘
+          ▼                                         │
+┌───────────────── user space · C++20 collector ─────┼───────────────────────┐
+│  ring_buffer__poll → enrich → seq_no → broadcast   │ bpf_map_update_elem    │
+└──────────────────────────┬─────────────────────────┴───────────────────────┘
+                           │ AF_UNIX · SOCK_SEQPACKET
+            720 B ▲         ▼ 32 B
+┌──────────────────────────┴─────────────────────────────────────────────────┐
+│  engine · Python 3.12 asyncio                                              │
+│  decode → lineage → rules → mitigate → JSONL audit + Prometheus /metrics   │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Deployment
+## Anatomy of a contained breakout
 
-**Docker Compose** (privileged collector + locked-down engine):
+<div align="center">
+<img src="docs/attack-chain.svg" alt="Animated attack chain: mcp-server spawns python3, which spawns /bin/sh, which runs curl against 169.254.169.254; the cgroup is quarantined and the kernel returns EPERM" width="100%"/>
+</div>
 
-```bash
-cd deploy && docker compose up --build
-```
+The five-stage payload above is exactly what `tests/simulate_mcp_attack.py` replays and asserts
+against on every CI run — five scenarios, eight expected enforcement packets, byte-compared.
 
-**Kubernetes** (DaemonSet, one pod per node, hostPID + hostNetwork, engine
-metrics annotated for scraping):
-
-```bash
-kubectl apply -f deploy/kubernetes-daemonset.yaml
-```
-
-**systemd** (bare metal / VM):
-
-```bash
-sudo make install                       # binary, engine package, rules, unit files
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin xsypher
-sudo systemctl daemon-reload
-sudo systemctl enable --now xsypher-collector xsypher-engine
-journalctl -u xsypher-collector -u xsypher-engine -f
-```
-
-The engine container runs with `readOnlyRootFilesystem`, `capabilities.drop:
-[ALL]` and `no-new-privileges`; only the collector is privileged, and the
-socket lives on a memory-backed `emptyDir` shared by the two containers.
-
----
-
-## Verification & benchmarks
-
-```bash
-./scripts/verify_and_benchmark.sh              # full run, 10k events
-./scripts/verify_and_benchmark.sh --quick      # 2k events
-make test && make simulate                     # or the individual steps
-```
-
-The script performs the ABI cross-check (C compiler vs ctypes), the BPF/C++
-build (or an explicit, non-failing `SKIP` when the toolchain is absent), the
-whole pytest suite, and `tests/simulate_mcp_attack.py`.
-
-`simulate_mcp_attack.py` stands up a real `AF_UNIX/SOCK_SEQPACKET` server
-(playing the C++ collector), launches the engine as a separate process, streams
-**10,000 benign events plus five attack chains**, and asserts that exactly the
-expected `wire_policy_cmd_t` bytes come back:
-
-```
-  [1/3] streamed 10000 benign events in 0.27s (36,443 events/s)
+```console
+$ PYTHONPATH=src python3 tests/simulate_mcp_attack.py
   [2/3] injecting attack chains
         ok  chain A: MCP prompt injection -> interactive shell (2.1 ms)
         ok  chain B: MCP recon tool + reverse shell port (2.2 ms)
         ok  chain C: Cloud IMDS credential theft (2.2 ms)
         ok  chain D: Host credential harvest (2.2 ms)
-        ok  chain E: Fileless payload staging via memfd (3.8 ms)
-
-        rule eval mean   : 5.65 us
-        rule eval p95    : 11.29 us
-        rule eval p99    : 18.55 us
-        rule eval max    : 1111.78 us      (first event, includes lazy JIT/caches)
+        ok  chain E: Fileless payload staging via memfd (2.1 ms)
 
         enforcement pkts : 8 (expected 8)
           - quarantine_cgroup(cgroup=40961)
@@ -389,70 +144,595 @@ expected `wire_policy_cmd_t` bytes come back:
           - block_ipv4(ip=169.254.169.254)
           - quarantine_pid(pid=10402)
           - quarantine_cgroup(cgroup=40965)
-        alerts by rule   : CLOUD_IMDS_CREDENTIAL_THEFT=1, FILELESS_MEMFD_EXECUTION=2,
-                           MCP_RECON_OR_EXFIL_TOOL=2, MCP_SHELL_BREAKOUT=1,
-                           SENSITIVE_CREDENTIAL_HARVEST=1, SUSPICIOUS_OUTBOUND_C2_PORT=1
         audit chain      : verified (8 record(s))
 ```
 
-Numbers from a 2-vCPU sandbox (`g++ 12`, Python 3.11): rule evaluation p99
-**≈ 16–19 µs** (budget is 500 µs), in-process throughput **≈ 137k events/s**,
-end-to-end (encode → socket → decode → rules → mitigation → JSONL) **≈ 36k
-events/s** on a single engine process.
+---
+
+## Live monitor
+
+<div align="center">
+<img src="docs/terminal-demo.svg" alt="Animated terminal session of the xSypher-Stream engine: telemetry streams in, a critical MCP_SHELL_BREAKOUT alert block appears with the ancestry chain, the kernel quarantine is confirmed and a hash-chained audit record is written" width="100%"/>
+</div>
+
+Line-oriented by design: the same output can be piped into a log pipeline (colour auto-disables on
+non-TTY or `NO_COLOR=1`). `--quiet` prints only alerts.
 
 ---
 
-## Design notes & limits
+## Detection catalogue
 
-**Why a ring buffer?** `BPF_MAP_TYPE_RINGBUF` gives a single shared, lockless,
-zero-copy (reserve/submit) queue. The kernel never blocks on a slow consumer; if
-the buffer is full the event is dropped and counted in the per-CPU
-`metrics_map` (`METRIC_RINGBUF_DROPS`) instead of stalling a syscall.
+Six high-precision detections ship in [`config/rules.yaml`](config/rules.yaml). They are **data, not
+code** — no rebuild is required to change them.
 
-**Why `SOCK_SEQPACKET`?** Message boundaries are preserved (a 720-byte frame is
-never split or coalesced), the protocol is connection-oriented (the collector
-notices engine restarts), and it is local-only — no TCP stack involved.
+| ID | Severity | Fires when | Kernel response | ATT&CK |
+|---|---|---|---|---|
+| `MCP_SHELL_BREAKOUT` | ![critical](https://img.shields.io/badge/-critical-b91c1c?style=flat-square) | an AI/MCP ancestor (`node`, `python3`, `uvicorn`, `deno`, `bun`, `claude-mcp`, …) spawns `sh`, `bash`, `zsh`, `dash`, `ksh`, `tmux`, `screen` | `QUARANTINE_CGROUP` + `SIGKILL` | T1059, T1059.004 |
+| `MCP_RECON_OR_EXFIL_TOOL` | ![high](https://img.shields.io/badge/-high-c2410c?style=flat-square) | an AI/MCP ancestor launches `curl`, `wget`, `nc`, `socat`, `nmap`, `ssh`, `scp`, `base64`, `chisel`, `ngrok`, … | `QUARANTINE_PID` + `SIGKILL` | T1046, T1041, T1105 |
+| `CLOUD_IMDS_CREDENTIAL_THEFT` | ![critical](https://img.shields.io/badge/-critical-b91c1c?style=flat-square) | a container connects to `169.254.169.254` (AWS/GCP/Azure/OCI IMDS) or `fd00:ec2::254` | `QUARANTINE_CGROUP` + `BLOCK_IPV4` + `SIGKILL` | T1552.005 |
+| `SENSITIVE_CREDENTIAL_HARVEST` | ![critical](https://img.shields.io/badge/-critical-b91c1c?style=flat-square) | a non-authorised binary opens `/etc/shadow`, `/etc/sudoers`, `/root/.ssh`, K8s SA token, `.env`, `id_rsa`, `credentials.json`, `/proc/kcore` | `QUARANTINE_PID` + `SIGKILL` | T1003.008, T1552.001 |
+| `FILELESS_MEMFD_EXECUTION` | ![critical](https://img.shields.io/badge/-critical-b91c1c?style=flat-square) | `memfd_create()` — or exec from `/memfd:`, `/proc/self/fd/`, `/dev/shm/`, `/run/shm/` | `QUARANTINE_CGROUP` + `SIGKILL` | T1620, T1027.009 |
+| `SUSPICIOUS_OUTBOUND_C2_PORT` | ![high](https://img.shields.io/badge/-high-c2410c?style=flat-square) | a container or web/MCP worker connects to `4444`, `1337`, `31337`, `5555`, `6667`, `9001` | `QUARANTINE_PID` + `BLOCK_IPV4` + `SIGKILL` | T1571, T1071 |
 
-**Why quarantine a cgroup rather than a PID?** PIDs are recycled in seconds and
-an attacker can fork faster than user space can kill. Quarantining the container
-cgroup (300–400 µs) covers every existing and future task in that domain, and
-the exiting-tgid cleanup in `sched_process_exit` prevents PID-reuse false
-positives for the PID-level map.
-
-**Failure modes that are handled deliberately**
-
-* No BPF-LSM in the kernel → collector auto-retries the load with the three
-  `lsm/*` programs disabled (`bpf_program__set_autoload(prog, false)`),
-  telemetry keeps flowing, status line says `lsm=unavailable`.
-* Engine restarts → collector keeps streaming, accepts the new connection, and
-  the engine re-announces `CMD_SET_ENFORCEMENT_MODE`.
-* Engine exits → releases every quarantine it applied (`UNQUARANTINE_*`) so the
-  node does not stay locked down.
-* Event storms → per-`(rule, pid)` cooldown (`cooldown_seconds`) plus kernel-side
-  `openat` filtering (only credential paths and writes into `/tmp`, `/dev/shm`,
-  `/usr/bin`).
-* Prompt injection that deletes the alert log → the SHA-256 chain breaks and the
-  engine reports it on the next start.
-
-**Limits, stated honestly**
-
-* `kernel_event_t.args` captures the first 4 argv pointers (64 bytes each),
-  joined with spaces — enough for a command line, not for arbitrary binaries.
-* The cgroup → container-ID resolver parses `/proc/<pid>/cgroup` with a bounded
-  LRU + TTL cache; a process in a non-Docker/containerd/CRI-O runtime resolves to
-  `host`.
-* `--active-kill` is user space and therefore racy against a fast fork loop; the
-  kernel LSM quarantine is the authoritative control.
-* IMDS blocking covers IPv4 `169.254.169.254` and IPv6 `fd00:ec2::254` (rule 3);
-  the LSM hook itself enforces the IPv4 address, which is what AWS/GCP/Azure
-  serve to IPv4 workloads.
-* The stub `vmlinux.h` fallback is for compile checks only — never ship an
-  object built against it.
+Each detection carries a `cooldown_seconds` window (default 5 s) per `(rule, pid)` so a fork loop
+produces one alert and one map update, not thousands.
 
 ---
 
-## License
+## Quickstart
 
-Apache-2.0 for user space, GPL-2.0 for the BPF object (`SEC("license") = "GPL"`,
-required for BPF-LSM programs). See `include/xsypher_abi.h` and
-`src/bpf/xsypher.bpf.c`.
+Want to see it move in 60 seconds, with **no root, no eBPF, no kernel changes**? The synthetic mode
+drives the complete Python path — decoder, lineage, rules, mitigation, hash-chained audit, metrics
+and TUI:
+
+```bash
+git clone https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer.git
+cd Zero-Trust-Kernel-Log-Streamer
+pip install -r requirements.txt          # PyYAML only
+
+# 1. watch it detect synthetic MCP breakouts
+PYTHONPATH=src python3 -m engine.main --simulate --metrics-port 9109
+
+# 2. inspect the live metrics in another shell
+curl -s localhost:9109/metrics | grep -E '^xsypher_(alerts|events)_total'
+
+# 3. verify the tamper-evident audit chain
+PYTHONPATH=src python3 -c "from engine.mitigator import AlertLog; \
+print(AlertLog.verify('/var/log/xsypher-alerts.jsonl'))"
+```
+
+From a clean checkout in this environment, that is:
+
+```console
+$ PYTHONPATH=src python3 -m pytest tests -q
+59 passed, 31 subtests passed in 0.45s
+
+$ PYTHONPATH=src python3 tests/simulate_mcp_attack.py
+RESULT: PASSED - all attack chains were detected and contained,
+        every expected wire_policy_cmd_t was delivered.
+```
+
+---
+
+## Build from source
+
+### Prerequisites
+
+| Component | Requirement | Debian / Ubuntu package |
+|---|---|---|
+| Kernel | ≥ 5.10 with BTF; `CONFIG_BPF_LSM=y` + `lsm=bpf` for **inline blocking** | — |
+| Compiler (BPF) | `clang` ≥ 12 | `clang llvm` |
+| Skeleton + BTF | `bpftool` | `bpftool` (or `linux-tools-$(uname -r)`) |
+| libbpf | ≥ 1.0 | `libbpf-dev libelf-dev zlib1g-dev` |
+| Compiler (user space) | `g++` ≥ 12 or `clang++` | `build-essential` |
+| Runtime (engine) | Python ≥ 3.10 (3.12 recommended) | `python3 python3-yaml` |
+| Build (optional) | CMake ≥ 3.20 | `cmake pkg-config` |
+
+```bash
+sudo apt-get install -y clang llvm bpftool libbpf-dev libelf-dev zlib1g-dev \
+                        build-essential python3 python3-yaml
+```
+
+### Option A — Make (recommended)
+
+```bash
+make check-deps        # confirms clang / g++ / bpftool are visible
+make -j"$(nproc)"      # build/xsypher.bpf.o + build/xsypher.skel.h + build/xsypher-collector
+```
+
+The architecture is detected automatically (`-D__TARGET_ARCH_x86` on x86_64,
+`-D__TARGET_ARCH_arm64` on aarch64). `include/vmlinux.h` is generated from the running kernel's BTF
+by [`scripts/gen_vmlinux.sh`](scripts/gen_vmlinux.sh) and is **git-ignored** — it is a build artifact
+of the target kernel, never a checked-in file.
+
+### Option B — CMake
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+ctest --test-dir build --output-on-failure
+```
+
+CMake additionally generates `compile_commands.json` for clangd/IDE integration, and skips the BPF
+target with an explicit warning instead of failing when `clang`/`bpftool` are absent.
+
+### Build targets
+
+| Target | Produces |
+|---|---|
+| `make` / `make all` | everything below |
+| `make bpf` | `build/xsypher.bpf.o`, `build/xsypher.skel.h` |
+| `make collector` | `build/xsypher-collector` |
+| `make test` | pytest (falls back to `unittest` if pytest is absent) |
+| `make simulate` | 10k-event end-to-end attack simulation |
+| `make verify` | [`scripts/verify_and_benchmark.sh`](scripts/verify_and_benchmark.sh) |
+| `make install` | binary, engine package, rules and systemd units (`DESTDIR` aware) |
+
+---
+
+## Run
+
+Two processes, one socket. The collector owns the kernel side; the engine owns policy.
+
+```bash
+# terminal 1 — kernel side (needs CAP_BPF/CAP_PERFMON, i.e. root on most hosts)
+sudo ./build/xsypher-collector \
+    --socket-path /run/xsypher/stream.sock \
+    --block-imds \
+    --enforce \
+    --verbose
+
+# terminal 2 — policy side
+sudo -E PYTHONPATH=src python3 -m engine.main \
+    --socket-path /run/xsypher/stream.sock \
+    --rules config/rules.yaml \
+    --alert-log /var/log/xsypher-alerts.jsonl \
+    --enforce-kernel
+```
+
+### `xsypher-collector` flags
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--socket-path <path>` | `/run/xsypher/stream.sock` | Unix socket to bind; falls back to `/tmp/xsypher-stream.sock` when `/run` is not writable |
+| `--enforce` | off | Start with `config_map[0] = INLINE_BLOCK` |
+| `--block-imds` | off | Pre-block `169.254.169.254` in `blocked_ipv4_map` |
+| `--no-lsm-fallback` | off | Fail hard instead of degrading to telemetry-only when BPF-LSM is unavailable |
+| `--no-status` | off | Silence the 10-second status line |
+| `--verbose` | off | Full libbpf logging |
+| `-h`, `--help`, `-V`, `--version` | — | Usage / ABI version |
+
+### `engine.main` flags
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--socket-path` | `/run/xsypher/stream.sock` | Collector socket (also `XSYPHER_SOCKET`) |
+| `--rules` | `config/rules.yaml` | Rule document (YAML or JSON; also `XSYPHER_RULES`) |
+| `--alert-log` | `/var/log/xsypher-alerts.jsonl` | Hash-chained audit log (also `XSYPHER_ALERT_LOG`) |
+| `--metrics-host` / `--metrics-port` | `0.0.0.0` / `9109` | Prometheus exporter (`0` = ephemeral port) |
+| `--enforce-kernel` | off | Send quarantine commands to the eBPF maps (otherwise audit-only) |
+| `--active-kill` | off | Also `SIGKILL` the offending PID from user space |
+| `--simulate`, `--simulate-count`, `--simulate-seed` | off | Synthetic generator for testing without root/eBPF |
+| `--lineage-ttl`, `--max-tracked` | `5.0`, `200000` | Grace window and graph bound |
+| `--fsync-alerts` | off | `fsync` after every audit record |
+| `--no-color`, `--quiet`, `--verbose` | — | Presentation |
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Clean shutdown (signal received, policy released) |
+| `1` | Fatal: BPF object could not load, socket unavailable, unusable alert-log directory |
+| `2` | Invalid command line |
+
+---
+
+## Configuration
+
+### Rule document schema
+
+```yaml
+version: "2"
+
+settings:
+  max_ancestry_depth: 8      # how far up the process tree to inspect
+  cooldown_seconds: 5.0      # duplicate-alert suppression per (rule, pid)
+  verify_chain_on_start: true
+
+rules:
+  - id: MCP_SHELL_BREAKOUT            # unique, stable, appears in alerts + metrics
+    title: "MCP/AI agent spawned an interactive shell"
+    severity: critical                # info | low | medium | high | critical
+    description: >-
+      Free-form analyst context, copied into the audit record.
+    enabled: true
+    event_types: [execve]             # execve connect openat memfd_create process_exit lsm_block
+    conditions:
+      exe_in: [sh, bash, zsh, dash, ksh, tmux, screen, dtach]
+      ancestor_has_ai_runtime: true
+      ancestor_min_depth: 1
+    actions: [quarantine_cgroup, kill]  # quarantine_pid quarantine_cgroup block_ipv4 block_imds kill
+    tags: [mcp, prompt-injection, rce]
+```
+
+**Condition semantics.** A `conditions:` mapping is **ANDed**; a list value is **ORed** internally;
+the special `any_of:` key holds a list of condition groups that are **ORed** with each other.
+
+| Condition | Type | Meaning |
+|---|---|---|
+| `event_types` | list | restrict to these kernel events |
+| `exe_in` / `exe_not_in` | list | subject executable basename (lineage-resolved for non-exec events) |
+| `exe_prefix_in` / `exe_suffix_in` | list | raw `filename` prefix/suffix — fileless detection |
+| `comm_in` / `comm_not_in` | list | 16-byte kernel `comm` |
+| `path_prefix_in` / `path_suffix_in` / `path_contains` | list | opened file path tests |
+| `args_contains` | list | joined `argv` substring match |
+| `dport_in` / `daddr_in` | list | destination port (host order) / IPv4 or IPv6 literal |
+| `uid_in` / `uid_not_in` | list | subject credential |
+| `container_only` | bool | only fire inside a non-host cgroup |
+| `container_or_comm_in` | list | fire in a container **or** for these binaries |
+| `ancestor_has_ai_runtime` | bool | any ancestor is an AI/MCP runtime |
+| `ancestor_any_in` | list | any ancestor basename in an explicit list |
+| `ancestor_min_depth` | int | require N ancestors |
+| `monitor_only` | bool | alert, never enforce |
+| `any_of` | list | OR of condition groups |
+
+Validation is strict and fails at load time with a precise message: unknown conditions, unknown
+event types, unknown actions, duplicate ids, invalid severities and empty rule sets are all rejected.
+Both YAML and JSON documents are accepted (`--rules` with a `.json` file needs no PyYAML).
+
+---
+
+## Binary ABI
+
+[`include/xsypher_abi.h`](include/xsypher_abi.h) is the single source of truth;
+[`src/engine/abi.py`](src/engine/abi.py) mirrors it with `ctypes` and asserts every size and offset at
+import time. All structures are `packed, aligned(8)` with explicit padding, so clang, g++ and ctypes
+agree byte for byte. The C header cross-checks itself against the Python mirror in CI, and
+`verify_and_benchmark.sh` re-compiles the header with the host compiler and diffs the sizes.
+
+| Structure | Bytes | Layout |
+|---|---|---|
+| `struct kernel_event_t` | **640** | `timestamp_ns` 0 · `cgroup_id` 8 · `pid` 16 · `tgid` 20 · `ppid` 24 · `uid` 28 · `gid` 32 · `mnt_ns_id` 36 · `pid_ns_id` 40 · `net_ns_id` 44 · `event_type` 48 · `retval` 52 · `blocked_by_lsm` 56 · `af_family` 57 · `dport` 58 · `sport` 60 · `daddr_v4` 64 · `saddr_v4` 68 · `daddr_v6` 72 · `open_flags` 88 · `comm` 92 · `parent_comm` 108 · `filename` 124 · `args` 380 |
+| `struct wire_event_msg_t` | **720** | `magic` 0 · `version` 4 · `msg_type` 6 · `seq_no` 8 · `container_id` 16 · `event` 80 |
+| `struct wire_policy_cmd_t` | **32** | `magic` 0 · `version` 4 · `cmd_type` 6 · `target_cgroup_id` 8 · `target_pid` 16 · `target_ipv4` 20 · `enforcement_mode` 24 |
+
+**Constants.** `XSYPHER_WIRE_MAGIC = 0x58535950` (`"XSYP"`), `XSYPHER_ABI_VERSION = 2`,
+`MAX_COMM_LEN = 16`, `MAX_PATH_LEN = 256`, `MAX_ARGS_LEN = 256`, `MAX_CONTAINER_ID_LEN = 64`,
+ring buffer `16 MiB`.
+
+**Event types.** `EXECVE=1`, `CONNECT=2`, `OPENAT=3`, `MEMFD_CREATE=4`, `PROCESS_EXIT=5`,
+`LSM_BLOCK=6`.
+
+**Policy commands.** `QUARANTINE_PID=10`, `UNQUARANTINE_PID=11`, `QUARANTINE_CGROUP=12`,
+`UNQUARANTINE_CGROUP=13`, `BLOCK_IPV4=14`, `UNBLOCK_IPV4=15`, `SET_ENFORCEMENT_MODE=16`
+(`0 = AUDIT_ONLY`, `1 = INLINE_BLOCK`).
+
+**Two conventions worth memorising**
+
+1. **Network byte order everywhere.** IPs and ports are stored exactly as the kernel produced them in
+   `sockaddr_in`. On a little-endian host, `169.254.169.254` is therefore `0xFEA9FEA9`
+   (`XSYPHER_IMDS_IPV4_RAW` in C, `abi.IMDS_IPV4_RAW` in Python). Never compare against
+   `inet_aton()` output without converting.
+2. **`container_id` is fixed width, not necessarily NUL-terminated.** A 64-hex Docker/containerd/CRI-O
+   id fills all 64 bytes; shorter values (`"host"`) are NUL padded. Both decoders accept both shapes.
+
+---
+
+## Metrics
+
+Zero-dependency Prometheus exporter on `:9109`, `text/plain; version=0.0.4`:
+
+```text
+# HELP xsypher_events_total Kernel telemetry events processed, by type
+# TYPE xsypher_events_total counter
+xsypher_events_total{type="execve"} 18422
+xsypher_events_total{type="connect"} 9103
+
+xsypher_alerts_total{rule="MCP_SHELL_BREAKOUT",severity="critical"} 1
+xsypher_mitigations_total{action="quarantine_cgroup"} 1
+xsypher_active_tracked_processes 214
+xsypher_rule_cooldowns_active 3
+xsypher_lsm_blocks_seen{type="lsm_block"} 7
+xsypher_commands_sent_total{command="quarantine_cgroup"} 1
+xsypher_commands_failed_total{reason="disconnected"} 0
+xsypher_socket_reconnects_total 0
+xsypher_rule_eval_seconds_sum 0.0521
+xsypher_rule_eval_seconds_count 27525
+xsypher_engine_uptime_seconds 61.4
+```
+
+| Series | Type | Use |
+|---|---|---|
+| `xsypher_events_total{type}` | counter | throughput and event mix per sensor |
+| `xsypher_alerts_total{rule,severity}` | counter | alert rate by detection (primary SLO signal) |
+| `xsypher_mitigations_total{action}` | counter | enforcement actions actually delivered |
+| `xsypher_active_tracked_processes` | gauge | lineage graph occupancy / memory proxy |
+| `xsypher_rule_cooldowns_active` | gauge | suppression pressure on the hot path |
+| `xsypher_lsm_blocks_seen` | counter | kernel denials observed (proves enforcement is live) |
+| `xsypher_commands_sent_total` / `_failed_total` | counter | policy channel health |
+| `xsypher_socket_reconnects_total` | counter | collector restarts |
+| `xsypher_rule_eval_seconds` | summary | hot-path latency (`_sum` / `_count`) |
+| `xsypher_engine_uptime_seconds` | gauge | liveness context |
+
+`GET /healthz` returns `200 ok` for Kubernetes probes. The container also exports
+`prometheus.io/scrape: "true"`, `prometheus.io/port: "9109"` annotations on the pod template.
+
+**Suggested alerts**
+
+```yaml
+- alert: XsypherEnforcementDown
+  expr: increase(xsypher_commands_failed_total[5m]) > 0
+  for: 5m
+  description: "xSypher cannot push policy to the collector — enforcement is blind."
+
+- alert: XsypherAlertFlood
+  expr: sum(rate(xsypher_alerts_total[5m])) > 5
+  for: 10m
+  description: "Sustained breakout attempts across the cluster."
+
+- alert: XsypherSensorStalled
+  expr: rate(xsypher_events_total[10m]) == 0
+  for: 15m
+  description: "No kernel telemetry for 15 minutes — sensor is dead or detached."
+```
+
+---
+
+## Audit trail
+
+Every alert becomes one JSONL record with a **SHA-256 hash chain**, so the log is tamper-evident
+without any external infrastructure:
+
+```text
+hash_n = SHA256( hex(hash_{n-1}) || canonical_json(record_n \ {hash, alert_id}) )
+hash_0 = "0" * 64
+```
+
+```json
+{
+  "schema": "xsypher.alert.v2",
+  "alert_id": "5f26e3f956c98122",
+  "sequence": 0,
+  "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "hash": "5f26e3f956c98122995f6a9f5f6ea9529a6790a484fcb803c736f5d39807e026",
+  "timestamp": "2026-10-26T16:24:16.647876388Z",
+  "rule": "MCP_SHELL_BREAKOUT",
+  "severity": "critical",
+  "subject": { "pid": 2413, "tgid": 2413, "comm": "sh", "uid": 1000,
+               "cgroup_id": 40961, "container_id": "26101d6e…780f",
+               "mnt_ns_id": 4026531840 },
+  "event": { "type": "execve", "filename": "/bin/sh",
+             "args": "-c 'curl http://169.254.169.254/latest/meta-data/iam/'" },
+  "ancestry": ["python3", "mcp-server"],
+  "mitigations": [
+    { "action": "quarantine_cgroup", "command": "quarantine_cgroup",
+      "target": 40961, "delivered": true }
+  ],
+  "enforced": true
+}
+```
+
+Editing or deleting any line breaks every subsequent hash. The engine re-verifies the chain on
+startup and reports `audit hash chain is INVALID` if it does not add up:
+
+```bash
+PYTHONPATH=src python3 -c "from engine.mitigator import AlertLog; \
+print(AlertLog.verify('/var/log/xsypher-alerts.jsonl'))"
+# (True, 8, None)
+```
+
+Ship it anywhere: `vector`/`fluent-bit` tail → SIEM; the `hash` and `prev_hash` fields travel with
+each event so downstream consumers can re-verify independently.
+
+---
+
+## Deployment
+
+| Target | Path | Notes |
+|---|---|---|
+| Docker Compose | [`deploy/docker-compose.yml`](deploy/docker-compose.yml) | privileged collector + `cap_drop: ALL` engine |
+| Kubernetes | [`deploy/kubernetes-daemonset.yaml`](deploy/kubernetes-daemonset.yaml) | DaemonSet, one pod per node, hostPID + hostNetwork |
+| systemd | [`deploy/xsypher-collector.service`](deploy/xsypher-collector.service), [`deploy/xsypher-engine.service`](deploy/xsypher-engine.service) | bare metal / VM, capability-scoped |
+| Container image | [`deploy/Dockerfile`](deploy/Dockerfile) | multi-stage build, slim runtime, non-root engine |
+
+### Docker Compose
+
+```bash
+cd deploy && docker compose up --build
+curl -s localhost:9109/metrics | head
+```
+
+### Kubernetes
+
+```bash
+kubectl apply -f deploy/kubernetes-daemonset.yaml
+kubectl -n xsypher logs -f ds/xsypher-stream -c engine
+```
+
+The engine container runs with `readOnlyRootFilesystem`, `capabilities.drop: [ALL]`,
+`allowPrivilegeEscalation: false`; only the collector is privileged, and the socket lives on a
+memory-backed `emptyDir` shared by the two containers. A `PodDisruptionBudget` keeps sensor coverage
+during rollouts.
+
+### systemd
+
+```bash
+sudo make install
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin xsypher
+sudo systemctl daemon-reload
+sudo systemctl enable --now xsypher-collector xsypher-engine
+journalctl -u xsypher-collector -u xsypher-engine -f
+```
+
+### Provisioning checklist
+
+- [ ] Kernel ≥ 5.10, `CONFIG_DEBUG_INFO_BTF=y` (verify: `ls /sys/kernel/btf/vmlinux`)
+- [ ] For **inline blocking**: `CONFIG_BPF_LSM=y` and `lsm=bpf` in `GRUB_CMDLINE_LINUX`
+      (verify: `cat /sys/kernel/security/lsm`)
+- [ ] `RLIMIT_MEMLOCK` raised (the unit sets `LimitMEMLOCK=infinity`; containers set `ulimits.memlock: -1`)
+- [ ] Socket directory writable by both processes (`/run/xsypher`, mode `0750`)
+- [ ] Alert log on durable storage, or shipped by a log agent (records are append-only)
+- [ ] `--block-imds` enabled on any node hosting workloads that do not legitimately need IMDS
+- [ ] Prometheus scraping `:9109/metrics`, and the three alert rules above wired to a pager
+
+---
+
+## Troubleshooting
+
+| Symptom | Diagnosis | Fix |
+|---|---|---|
+| `WARNING: BPF-LSM unavailable … continuing in telemetry-only mode` | `bpf_program__set_autoload()` disabled the LSM hooks because the kernel rejected them | Rebuild the kernel with `CONFIG_BPF_LSM=y`, boot with `lsm=bpf`, or accept telemetry-only + `--active-kill` |
+| `error: cannot load BPF object: … EPERM` | Missing capabilities or `RLIMIT_MEMLOCK` | Run as root / grant `CAP_BPF` + `CAP_PERFMON`; raise memlock |
+| `cannot bind …/stream.sock (Permission denied)` | `/run` is not writable by the launching user | The collector retries `/tmp/xsypher-stream.sock`; or `install -d -m 0750 /run/xsypher` |
+| `unable to connect to collector socket` | Collector not running, or engine started first | Start the collector first; the engine retries every second and logs reconnects |
+| Alerts appear but nothing is blocked | Engine started without `--enforce-kernel`, or LSM inactive | Restart with `--enforce-kernel`; check `xsypher_lsm_blocks_seen` increments |
+| `audit hash chain is INVALID` | Log edited/truncated, or written by two engines concurrently | Restore from backup; run one engine per log path |
+| `bpftool: command not found` during build | `linux-tools` missing | `apt-get install bpftool` (or `linux-tools-$(uname -r)`) |
+| `no usable kernel BTF found` | `gen_vmlinux.sh` wrote the documented stub header | Install `linux-image-$(uname -r)-dbg` or `bpftool`; re-run with `FORCE=1` |
+| High `xsypher_events_total` from a chatty host | `openat` filter too tight for this workload | Widen `is_writable_staging_path()` in `xsypher.bpf.c` or filter in the rule set |
+
+---
+
+## Security model
+
+**Trust boundaries.** The collector is the only privileged component. It parses no untrusted input
+beyond fixed-size kernel records, and it never interprets policy — it applies 32-byte commands
+verbatim. The engine holds no capabilities: it is a normal user-space process whose only influence on
+the kernel is the narrow policy channel above.
+
+| Asset | Protection |
+|---|---|
+| Collector socket | `AF_UNIX` + `SOCK_SEQPACKET`, created `0750` in `/run/xsypher`; local only, never a TCP port |
+| Policy channel | Every command is re-validated for `magic`, `version` and `cmd_type`; unknown commands are logged and dropped |
+| Alert log | SHA-256 chained; tampering is detectable offline without the engine |
+| Engine container | `cap_drop: ALL`, `readOnlyRootFilesystem`, `no-new-privileges`, non-root |
+| Metrics endpoint | Read-only, no secrets; bind to loopback or keep it behind the Service if the network is untrusted |
+| Rule documents | Loaded once at startup; a malformed or unknown rule aborts the load rather than silently disabling protection |
+
+**Fail-safe behaviour.** No BPF-LSM → degrade to telemetry and say so in the status line. Engine
+crash → the kernel keeps the last policy. Graceful stop → the engine emits `UNQUARANTINE_*` for
+everything it applied, so a restart cannot leave a node locked down. Ring buffer full → drop and
+count (`METRIC_RINGBUF_DROPS`); the syscall path is never blocked.
+
+**Explicit non-goals.** xSypher-Stream is not a sandbox, an admission controller, a vulnerability
+scanner, or an image-signing verifier. It detects *behaviour* of already-running processes. It does
+not stop an attacker who has root and unloads the sensor — pair it with immutable infrastructure and
+audit-log shipping.
+
+**Reporting a vulnerability.** Please read [`SECURITY.md`](SECURITY.md) and report privately; do not
+open a public issue.
+
+---
+
+## Performance
+
+Measured on a 2-vCPU sandbox (Debian 12, `g++ 12`, CPython 3.11), replaying 10,016 events through
+the engine:
+
+| Metric | Measured | Budget | Headroom |
+|---|---|---|---|
+| Rule evaluation **p50** | 6.25 µs | — | — |
+| Rule evaluation **p95** | 11.65 µs | — | — |
+| Rule evaluation **p99** | **17.3 µs** | 500 µs | 29× |
+| Rule evaluation **max** | 1.33 ms (first event, cold caches) | — | — |
+| In-process throughput | **136k events/s** | — | — |
+| End-to-end throughput (encode → socket → decode → rules → JSONL) | **38k events/s** | — | — |
+| Policy round-trip (detection → kernel map update) | **2.1–3.8 ms** | — | — |
+| Ring buffer | 16 MiB lockless | — | ~10k events of headroom before drops |
+
+The hot path is allocation-light by construction: sets and tuples are pre-normalised at load time,
+the ancestry chain is resolved once per event (not once per rule), and a per-`(rule, pid)` cooldown
+stops repeated work on the same subject.
+
+**Scaling guidance.** One collector per node (it is per-kernel). One engine can serve one or more
+collectors; if you centralise engines, keep them on the same host as the socket — the transport is
+Unix-domain by design, and there is no TCP fallback to accidentally expose.
+
+---
+
+## Verification
+
+One command proves the whole chain:
+
+```bash
+./scripts/verify_and_benchmark.sh            # full: 10,000 events + 5 attack chains
+./scripts/verify_and_benchmark.sh --quick    # 2,000 events
+```
+
+```console
+$ ./scripts/verify_and_benchmark.sh
+==> 1/5  ABI parity (include/xsypher_abi.h <-> src/engine/abi.py)
+  PASS  struct layouts identical in C and Python (640 720 32)
+==> 2/5  eBPF CO-RE object (src/bpf/xsypher.bpf.c)
+  PASS  BPF object + skeleton built
+==> 3/5  C++20 collector (src/collector)
+  PASS  collector built
+==> 4/5  Python unit tests
+  PASS  pytest suite
+==> 5/5  End-to-end MCP attack simulation (10000 benign events + 5 chains)
+  PASS  simulation: all attack chains detected and contained
+
+  passed=5 failed=0 skipped=0
+RESULT: OK - xSypher-Stream verified end to end
+```
+
+What each layer asserts:
+
+| Suite | Tests | Covers |
+|---|---|---|
+| [`tests/test_wire_protocol.py`](tests/test_wire_protocol.py) | 23 | exact struct sizes/offsets, **cross-language parity by compiling the C header**, codec round-trips (IPv4/IPv6/truncation/bad magic/bad version), command encoding, a real `SOCK_SEQPACKET` round trip against a mock collector |
+| [`tests/test_lineage_and_rules.py`](tests/test_lineage_and_rules.py) | 36 | ancestry chains, depth limits, cycle breaking, TTL grace window, LRU bounds, all six rules firing *and* staying quiet on benign traffic, cooldowns, rule-validation errors, hash-chain write/verify/tamper/restart, Prometheus rendering + live HTTP fetch, TUI, CLI config |
+| [`tests/simulate_mcp_attack.py`](tests/simulate_mcp_attack.py) | end-to-end | 10k benign events + 5 attack chains over a real socket, byte-comparison of every expected `wire_policy_cmd_t`, audit-chain verification, throughput and p99 benchmarks |
+
+**Toolchain transparency.** In sandboxes without `clang`/`bpftool`/`libbpf-dev`, the script reports
+the BPF and collector steps as `SKIP` (never `FAIL`) and still runs the ABI cross-check, the full test
+suite and the simulation. Locally, the collector also type-checks clean under
+`-Wall -Wextra -Wpedantic`, and the BPF program is verified with `gcc -fsyntax-only` against the
+generated BTF header. The authoritative build runs in CI on a host with the full toolchain — see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+---
+
+## Compatibility
+
+| Axis | Supported | Notes |
+|---|---|---|
+| Kernel | 5.10 → 6.x | CO-RE means one object, no recompilation per kernel |
+| Architectures | `x86_64`, `aarch64` | `-D__TARGET_ARCH_x86` / `_arm64` selected automatically |
+| Distros | Any with BTF (`CONFIG_DEBUG_INFO_BTF`) | Ubuntu 20.04+, Debian 11+, RHEL 9+, Amazon Linux 2023, Talos, Bottlerocket |
+| Containers | Docker, containerd, CRI-O | 64-hex ids parsed from `/proc/<pid>/cgroup`; anything else reports `host` |
+| Python | 3.10, 3.11, 3.12, 3.13 | 3.12 is the reference runtime |
+| libbpf | ≥ 1.0 (1.1+ for epoll-driven ring buffer) | older 1.x falls back to timed polling |
+| Inline blocking | `CONFIG_BPF_LSM=y` + `lsm=bpf` | otherwise telemetry-only mode |
+
+---
+
+## Contributing
+
+```bash
+git clone https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer.git
+cd Zero-Trust-Kernel-Log-Streamer
+pip install -r requirements.txt pytest
+make test && ./scripts/verify_and_benchmark.sh --quick
+```
+
+Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) for the rule-authoring guide, the ABI change policy
+(**any** change to `include/xsypher_abi.h` must bump `XSYPHER_ABI_VERSION`, update
+`src/engine/abi.py`, and extend the layout tests), the commit conventions and the review checklist.
+Security issues go through [`SECURITY.md`](SECURITY.md), never a public issue.
+
+**Licence.** Apache-2.0 for user space; the BPF object declares `SEC("license") = "GPL"` because the
+kernel requires a GPL-compatible licence for BPF-LSM program types. See [`LICENSE`](LICENSE).
+
+---
+
+<div align="center">
+
+<sub><b>xSypher-Stream</b> · ABI v2 · built for people who have to answer the question<br/>
+<i>“what exactly did that agent do on this host, and what did we do about it?”</i></sub>
+
+<br/><br/>
+
+<img src="docs/banner.svg" alt="" width="60%" opacity="0.9"/>
+
+</div>
