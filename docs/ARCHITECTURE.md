@@ -1,7 +1,13 @@
 # Architecture
 
-Design notes for xSypher-Stream: component responsibilities, the binary wire contract, and the
-reasoning behind the current structure.
+Structural reference for xSypher-Stream: component responsibilities, the kernel object, the maps that
+carry policy state, and the reasoning behind the current shape of the system.
+
+Companion documents: [THREAT-MODEL.md](THREAT-MODEL.md) for what is defended and against whom,
+[WIRE-PROTOCOL.md](WIRE-PROTOCOL.md) for byte layouts and the connection state machine,
+[ENFORCEMENT.md](ENFORCEMENT.md) for hook semantics and races, [DETECTIONS.md](DETECTIONS.md) for rule
+rationale, [PERFORMANCE.md](PERFORMANCE.md) for measurement, and [OPERATIONS.md](OPERATIONS.md) for
+running it.
 
 - [Components](#components)
 - [Event path](#event-path)
@@ -107,7 +113,8 @@ is a 2 to 4 millisecond round trip because it crosses two processes and a socket
 
 ## Enforcement path
 
-`config_map[0]` selects behaviour:
+`config_map[0]` selects behaviour. Full hook-by-hook semantics, return codes, race analysis and known
+gaps are in [ENFORCEMENT.md](ENFORCEMENT.md).
 
 | Mode | Value | Effect |
 |---|---|---|
@@ -132,66 +139,27 @@ never leaves a node locked down.
 
 ## Wire protocol
 
-`include/xsypher_abi.h` is normative. `src/engine/abi.py` mirrors it with `ctypes`; a test compiles the
-header with the host C compiler and compares sizes and offsets against the Python structures.
+`include/xsypher_abi.h` is normative. `src/engine/abi.py` mirrors it with `ctypes` and asserts every size
+and offset at import; a test compiles the header with the host C compiler and compares both.
 
-### Structures
-
-| Structure | Size | Fields and offsets |
+| Structure | Size | Direction |
 |---|---|---|
-| `struct kernel_event_t` | 640 B | `timestamp_ns` 0, `cgroup_id` 8, `pid` 16, `tgid` 20, `ppid` 24, `uid` 28, `gid` 32, `mnt_ns_id` 36, `pid_ns_id` 40, `net_ns_id` 44, `event_type` 48, `retval` 52, `blocked_by_lsm` 56, `af_family` 57, `dport` 58, `sport` 60, `daddr_v4` 64, `saddr_v4` 68, `daddr_v6` 72, `open_flags` 88, `comm` 92, `parent_comm` 108, `filename` 124, `args` 380 |
-| `struct wire_event_msg_t` | 720 B | `magic` 0, `version` 4, `msg_type` 6, `seq_no` 8, `container_id` 16, `event` 80 |
-| `struct wire_policy_cmd_t` | 32 B | `magic` 0, `version` 4, `cmd_type` 6, `target_cgroup_id` 8, `target_pid` 16, `target_ipv4` 20, `enforcement_mode` 24 |
+| `struct kernel_event_t` | 640 B | kernel to collector, one ring buffer record |
+| `struct wire_event_msg_t` | 720 B | collector to engine, one `SOCK_SEQPACKET` datagram |
+| `struct wire_policy_cmd_t` | 32 B | engine to collector, one datagram per command |
 
-All structures are `packed, aligned(8)` with explicit padding, so clang, g++ and ctypes agree on every
-byte.
-
-### Constants
-
-| Name | Value |
+| Constant | Value |
 |---|---|
-| `XSYPHER_WIRE_MAGIC` | `0x58535950` (`XSYP`) |
-| `XSYPHER_ABI_VERSION` | `2` |
-| `MAX_COMM_LEN` | 16 |
-| `MAX_PATH_LEN` | 256 |
-| `MAX_ARGS_LEN` | 256 |
-| `MAX_CONTAINER_ID_LEN` | 64 |
-| Ring buffer size | 16 MiB |
+| `XSYPHER_WIRE_MAGIC` | `0x58535950` |
+| `XSYPHER_ABI_VERSION` | 2 |
+| `MAX_COMM_LEN` / `MAX_PATH_LEN` / `MAX_ARGS_LEN` / `MAX_CONTAINER_ID_LEN` | 16 / 256 / 256 / 64 |
 
-### Event types
+Event types 1 to 6: `EXECVE`, `CONNECT`, `OPENAT`, `MEMFD_CREATE`, `PROCESS_EXIT`, `LSM_BLOCK`.
+Command types 10 to 16: quarantine and unquarantine of a pid and of a cgroup, block and unblock of an
+IPv4 address, and set enforcement mode.
 
-`EXECVE=1`, `CONNECT=2`, `OPENAT=3`, `MEMFD_CREATE=4`, `PROCESS_EXIT=5`, `LSM_BLOCK=6`.
-
-### Policy commands
-
-| Command | Value | Carries |
-|---|---|---|
-| `CMD_QUARANTINE_PID` | 10 | `target_pid` |
-| `CMD_UNQUARANTINE_PID` | 11 | `target_pid` |
-| `CMD_QUARANTINE_CGROUP` | 12 | `target_cgroup_id` |
-| `CMD_UNQUARANTINE_CGROUP` | 13 | `target_cgroup_id` |
-| `CMD_BLOCK_IPV4` | 14 | `target_ipv4` |
-| `CMD_UNBLOCK_IPV4` | 15 | `target_ipv4` |
-| `CMD_SET_ENFORCEMENT_MODE` | 16 | `enforcement_mode` (0 audit, 1 inline block) |
-
-### Conventions
-
-- **Network byte order is preserved.** Addresses and ports are stored as the kernel received them in
-  `sockaddr_in`. On little-endian hosts `169.254.169.254` is `0xFEA9FEA9`; use
-  `XSYPHER_IMDS_IPV4_RAW` in C and `abi.IMDS_IPV4_RAW` in Python rather than computing it.
-- **`container_id` may not be NUL terminated.** A 64-hex identifier occupies the whole field; shorter
-  values such as `host` are NUL padded. Decoders must accept both.
-- **One datagram is one frame.** `SOCK_SEQPACKET` preserves boundaries; a short read is a protocol
-  error, not a partial frame.
-
-### Versioning policy
-
-Changing a structure, offset or constant increments `XSYPHER_ABI_VERSION`. The change must update the
-C header, `src/engine/abi.py`, the compile-time assertions and the layout tests together. Both
-components reject frames whose magic or version does not match and log the reason rather than
-guessing at the layout.
-
----
+Field-by-field tables with offsets, hexdumps of a real frame and command, the connection state machine,
+validation rules and the versioning policy are in [WIRE-PROTOCOL.md](WIRE-PROTOCOL.md).
 
 ## Design decisions
 
@@ -225,6 +193,12 @@ detections is worse than not starting.
   is the authoritative control.
 - IMDS denial covers IPv4 `169.254.169.254` in the LSM hook. The IPv6 equivalent is handled by rule
   evaluation only.
+- `file_open` resolves the dentry basename, not a full path, so its credential-path branch cannot match
+  absolute prefixes. The effective in-kernel file protection is write denial inside a quarantined domain.
+  Details and the intended fix: [ENFORCEMENT.md](ENFORCEMENT.md#7-known-enforcement-gaps).
+- The `openat` kernel filter emits a record for credential prefixes, `.env` suffixes and write-like opens
+  into staging directories only, so rule conditions on other suffixes and names are narrower than they
+  read. See [DETECTIONS.md](DETECTIONS.md#6-sensitive_credential_harvest).
 - `openat` filtering is deliberately narrow. Hosts with heavy temporary-file traffic may need the
   staging-path list widened or narrowed; see `is_writable_staging_path()`.
 - The reduced `vmlinux.h` produced by `scripts/gen_vmlinux.sh` when BTF is unavailable is for type
