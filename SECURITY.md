@@ -20,7 +20,7 @@ Please include:
 - affected component (`src/bpf`, `src/collector`, `src/engine`, `deploy`, `scripts`) and version/commit,
 - kernel version, architecture, and whether `CONFIG_BPF_LSM` is enabled,
 - a reproduction (event sequence, rule document, or minimal harness),
-- the impact you believe is achievable — especially any path that could cause
+- the impact you believe is achievable, especially any path that could cause
   **false enforcement** (blocking a legitimate workload) or **silent non-enforcement**.
 
 ### What to expect
@@ -34,7 +34,7 @@ Please include:
 
 ## Scope
 
-In scope — anything that breaks one of these invariants:
+In scope: anything that breaks one of these invariants:
 
 1. **Kernel safety.** A verifier rejection is a bug; a program that can be made to read out of bounds,
    infinite-loop, or leak kernel memory is critical.
@@ -54,15 +54,15 @@ Out of scope:
 - Attacks requiring an attacker who already has `CAP_SYS_ADMIN`/root on the host and can unload the
   sensor (documented non-goal: xSypher-Stream is a sensor, not an immutable boot chain).
 - Denial of service through intended resource limits (e.g. flooding events until ring buffer drops are
-  counted — drops are the designed back-pressure, and are exported as a metric).
+  counted; drops are the designed back-pressure and are exported as a metric).
 - Vulnerabilities in kernels, libbpf, or Python itself. Report those upstream.
 - The synthetic simulator (`--simulate`) and test fixtures.
 
 ## Hardening baseline
 
-Deployments should follow the checklist in the README's *Deployment → Provisioning checklist*:
-one privileged collector per node, an unprivileged engine with `cap_drop: ALL` and
-`no-new-privileges`, a `0750` socket directory, alert-log shipping to append-only storage, and
-Prometheus alerts on `xsypher_commands_failed_total` and `xsypher_events_total` stalls.
+Deployments should follow the shipped units and manifests: one privileged collector per node, an
+unprivileged engine with `cap_drop: ALL` and `no-new-privileges`, a `0750` socket directory, alert log
+shipping to append-only storage, and the Prometheus alerts listed in `docs/OPERATIONS.md` (notably
+`xsypher_commands_failed_total` and `xsypher_events_total` stalls).
 
 [ghsa]: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability
