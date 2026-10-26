@@ -1,8 +1,10 @@
 # Operations runbook
 
-Day-two procedures: health checks, metrics and alerting, the audit log, capacity, upgrades and
-troubleshooting.
+Day-two procedures: service objectives, health checks, metrics and alerting, the audit log, capacity,
+upgrades and troubleshooting. Measurement methodology is in [PERFORMANCE.md](PERFORMANCE.md); what is
+being defended is in [THREAT-MODEL.md](THREAT-MODEL.md).
 
+- [Service objectives](#service-objectives)
 - [Health checks](#health-checks)
 - [Metrics](#metrics)
 - [Alerting](#alerting)
@@ -13,6 +15,21 @@ troubleshooting.
 - [Troubleshooting](#troubleshooting)
 
 ---
+
+## Service objectives
+
+| Objective | Target | Instrument | Escalation |
+|---|---|---|---|
+| Detection latency, kernel event to alert | p99 under 25 ms | `xsypher_rule_eval_seconds` plus collector status timing | rule cost or event volume, in that order |
+| Enforcement latency, alert to map update | p99 under 10 ms | 2.1 to 3.8 ms observed across the five simulated chains | socket or engine loop saturation |
+| Sensor availability | 99.9% per node per month | collector process uptime, `drops` flat | node isolation and reprovision |
+| Telemetry completeness | under 0.1% loss | `drops` against `events` in the collector status line | narrow kernel filter, then add CPU |
+| Audit completeness | 100% of alerts, chain verified at startup | `AlertLog.verify` on every start | restore from backup, investigate writer |
+| Rules in force | the reviewed rule set, no silent drift | rule-parity CI job, `loaded N rules` at startup | treat as a security regression |
+
+The two objectives that gate everything else are availability and completeness: an unavailable sensor
+detects nothing, and a lossy sensor cannot be trusted after the fact. Latency matters because containment
+is time-bounded, but a sensor that is fast and incomplete is worse than one that is slower and whole.
 
 ## Health checks
 

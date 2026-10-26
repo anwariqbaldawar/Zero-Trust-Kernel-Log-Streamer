@@ -1,6 +1,8 @@
 # Configuration reference
 
-Complete option, environment variable and rule-schema reference.
+Complete option, environment variable and rule-schema reference. For why a rule is shaped the way it is,
+see [DETECTIONS.md](DETECTIONS.md); for what each action does in the kernel, see
+[ENFORCEMENT.md](ENFORCEMENT.md).
 
 - [Collector options](#collector-options)
 - [Engine options](#engine-options)
