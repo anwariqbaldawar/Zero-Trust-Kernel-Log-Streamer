@@ -1,0 +1,30 @@
+# Build artifacts
+build/
+*.o
+*.skel.h
+xsypher-collector
+
+# Generated kernel headers (regenerate with scripts/gen_vmlinux.sh)
+include/vmlinux.h
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime artifacts
+*.jsonl
+*.log
+/run/
+xsypher-stream.sock
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

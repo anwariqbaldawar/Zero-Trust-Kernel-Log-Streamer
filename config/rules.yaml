@@ -1,0 +1,177 @@
+# xSypher-Stream declarative zero-trust rule set.
+#
+# Every rule is data, not code: the engine interprets these documents at
+# startup and evaluates them against enriched kernel telemetry.  Add, disable
+# or retune rules without touching Python (send SIGHUP / restart to reload).
+#
+# Condition keys understood by src/engine/rule_engine.py
+# ------------------------------------------------------
+#   event_types             list  one or more of: execve, connect, openat,
+#                                 memfd_create, process_exit, lsm_block
+#   exe_in                  list  process basename must be in this set
+#   exe_not_in              list  process basename must not be in this set
+#   exe_prefix_in           list  raw filename starts with one of these
+#   comm_in / comm_not_in   list  kernel comm (16 bytes) allow/deny lists
+#   path_prefix_in          list  opened filename starts with one of these
+#   path_suffix_in          list  opened filename ends with one of these
+#   path_contains           list  opened filename contains one of these
+#   args_contains           list  joined argv contains one of these
+#   dport_in                list  destination port (host order)
+#   daddr_in                list  destination IPv4 in dotted-quad form
+#   container_only          bool  only fire inside a non-host cgroup
+#   container_or_comm_in    list  fire when in a container *or* comm in list
+#   ancestor_has_ai_runtime bool  an ancestor is an AI agent / MCP runtime
+#   ancestor_any_in         list  an ancestor basename is in this set
+#   ancestor_min_depth      int   how many ancestors must exist (default 0)
+#   monitor_only            bool  emit the alert but never enforce
+#
+# Conditions inside one rule are ANDed.  A list value is ORed internally, and
+# the special `any_of:` key holds a list of condition groups that are ORed with
+# each other - use it when one rule needs to cover several distinct shapes.
+#
+# Supported actions: quarantine_pid, quarantine_cgroup, block_ipv4, kill,
+# block_imds.  Actions are translated into binary wire_policy_cmd_t packets by
+# src/engine/mitigator.py and pushed down to the eBPF LSM maps.
+
+version: "2"
+
+settings:
+  # How far up the process tree the engine inspects (node -> python -> sh -> curl
+  # needs 3 hops, so 8 gives comfortable headroom).
+  max_ancestry_depth: 8
+  # Suppress duplicate alerts for the same (rule, subject) tuple.
+  cooldown_seconds: 5.0
+  # Verify that the alert log hash chain is intact on startup.
+  verify_chain_on_start: true
+
+rules:
+  # ---------------------------------------------------------------------- #
+  # 1. An AI agent / MCP tool call that shells out is the primary escape
+  #    primitive of prompt injection: the model asks for "a command", the MCP
+  #    server dutifully spawns /bin/sh, and the container is owned.
+  # ---------------------------------------------------------------------- #
+  - id: MCP_SHELL_BREAKOUT
+    title: "MCP/AI agent spawned an interactive shell"
+    severity: critical
+    description: >-
+      A process whose ancestry contains an AI runtime (node, python3, uvicorn,
+      deno, bun, claude-mcp, ...) executed a shell or terminal multiplexer.
+      Legitimate MCP servers do not need an interactive shell; this is the
+      canonical prompt-injection to remote-code-execution pivot.
+    enabled: true
+    event_types: [execve]
+    conditions:
+      exe_in: [sh, bash, zsh, dash, ksh, fish, csh, tcsh, tmux, screen, dtach]
+      ancestor_has_ai_runtime: true
+      ancestor_min_depth: 1
+    actions: [quarantine_cgroup, kill]
+    tags: [mcp, prompt-injection, rce]
+
+  # ---------------------------------------------------------------------- #
+  # 2. Network / recon tooling launched from an MCP tool call: the agent is
+  #    being used as a proxy to reach the network it was never given.
+  # ---------------------------------------------------------------------- #
+  - id: MCP_RECON_OR_EXFIL_TOOL
+    title: "MCP/AI agent launched network or exfiltration tooling"
+    severity: high
+    description: >-
+      curl, wget, nc, socat, nmap, ssh, scp or base64 was executed by a process
+      with an AI/MCP ancestor.  This is either reconnaissance, credential
+      exfiltration or C2 beaconing through an agent tool call.
+    enabled: true
+    event_types: [execve]
+    conditions:
+      exe_in:
+        [curl, wget, nc, ncat, netcat, socat, nmap, masscan, ssh, scp, sftp,
+         rsync, ftp, tftp, telnet, base64, xxd, od, chisel, ngrok]
+      ancestor_has_ai_runtime: true
+      ancestor_min_depth: 1
+    actions: [quarantine_pid, kill]
+    tags: [mcp, recon, exfiltration, c2]
+
+  # ---------------------------------------------------------------------- #
+  # 3. Cloud Instance Metadata Service access from a workload.  IMDSv1 hands
+  #    out IAM credentials to anything that can reach 169.254.169.254, so a
+  #    container touching it is a credential-theft attempt.
+  # ---------------------------------------------------------------------- #
+  - id: CLOUD_IMDS_CREDENTIAL_THEFT
+    title: "Cloud metadata service (IMDS) credential theft"
+    severity: critical
+    description: >-
+      A containerised process connected to 169.254.169.254 (AWS/GCP/Azure/OCI
+      instance metadata).  This is the standard container-to-cloud escalation
+      used to steal IAM role credentials.
+    enabled: true
+    event_types: [connect, lsm_block]
+    conditions:
+      daddr_in: ["169.254.169.254", "fd00:ec2::254"]
+      container_only: true
+    actions: [quarantine_cgroup, block_ipv4, kill]
+    tags: [cloud, imds, credential-theft]
+
+  # ---------------------------------------------------------------------- #
+  # 4. Credential harvesting from the host filesystem.  Only a tiny set of
+  #    system binaries legitimately reads these paths.
+  # ---------------------------------------------------------------------- #
+  - id: SENSITIVE_CREDENTIAL_HARVEST
+    title: "Sensitive credential file access"
+    severity: critical
+    description: >-
+      A non-authorised process opened /etc/shadow, /etc/sudoers, an SSH private
+      key, the Kubernetes service-account token or a .env secret file.  This is
+      the classic Linux post-exploitation credential dump.
+    enabled: true
+    event_types: [openat]
+    conditions:
+      exe_not_in:
+        [sshd, login, sudo, su, passwd, chpasswd, systemd, unix_chkpwd, polkitd,
+         gdm, lightdm, cron, crond, kubelet]
+      any_of:
+        - path_prefix_in:
+            ["/etc/shadow", "/etc/sudoers", "/etc/gshadow", "/root/.ssh",
+             "/var/run/secrets/kubernetes.io/serviceaccount/token", "/proc/kcore"]
+        - path_suffix_in: [".env", ".pem", ".key"]
+        - path_contains: ["id_rsa", "id_ed25519", "id_ecdsa", "credentials.json"]
+    actions: [quarantine_pid, kill]
+    tags: [credential-access, post-exploitation]
+
+  # ---------------------------------------------------------------------- #
+  # 5. Fileless payload staging: memfd_create, /proc/self/fd execution or a
+  #    binary dropped in /dev/shm never touches disk where an AV would see it.
+  # ---------------------------------------------------------------------- #
+  - id: FILELESS_MEMFD_EXECUTION
+    title: "Fileless payload staging via memfd / shm"
+    severity: critical
+    description: >-
+      A memory-backed executable was created (memfd_create) or executed from
+      /memfd:, /proc/self/fd/ or /dev/shm/.  This is the standard fileless
+      malware technique used after a breakout to stay off disk.
+    enabled: true
+    event_types: [memfd_create, execve]
+    conditions:
+      any_of:
+        - event_types: [memfd_create]
+        - exe_prefix_in: ["/memfd:", "/proc/self/fd/", "/dev/shm/", "/run/shm/"]
+    actions: [quarantine_cgroup, kill]
+    tags: [fileless, malware, persistence]
+
+  # ---------------------------------------------------------------------- #
+  # 6. Classic reverse-shell ports.  A container or web/MCP worker opening an
+  #    outbound session to one of these is a C2 channel.
+  # ---------------------------------------------------------------------- #
+  - id: SUSPICIOUS_OUTBOUND_C2_PORT
+    title: "Outbound connection to a reverse-shell/C2 port"
+    severity: high
+    description: >-
+      An outbound TCP connection was made to a well-known reverse-shell or C2
+      port (4444, 1337, 31337, 5555, 6667, 9001) from a container or from a
+      web/MCP worker process.
+    enabled: true
+    event_types: [connect]
+    conditions:
+      dport_in: [4444, 1337, 31337, 5555, 6667, 9001]
+      container_or_comm_in:
+        [node, nodejs, python, python3, uvicorn, gunicorn, nginx, httpd, apache2,
+         php-fpm, java, ruby, deno, bun, mcp-server, claude-mcp]
+    actions: [quarantine_pid, block_ipv4, kill]
+    tags: [c2, reverse-shell, exfiltration]
