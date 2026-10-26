@@ -1,0 +1,6 @@
+# Runtime dependency of the Python threat engine (src/engine).
+# Everything else - asyncio, ctypes, struct, hashlib, http - is stdlib.
+PyYAML>=6.0,<7.0
+
+# Development / verification only:
+#   pip install pytest

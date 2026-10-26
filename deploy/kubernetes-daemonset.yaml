@@ -1,0 +1,312 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# xSypher-Stream - Kubernetes DaemonSet.
+#
+# One pod per node, two containers:
+#   collector : privileged, hostPID, eBPF ring buffer, owns the unix socket
+#   engine    : policy evaluation, Prometheus metrics, hash-chained audit log
+#
+#   kubectl apply -f deploy/kubernetes-daemonset.yaml
+#
+# Inline enforcement (LSM) requires the node kernel to be built with
+# CONFIG_BPF_LSM=y and booted with `lsm=bpf,lockdown,yama,integrity,apparmor`.
+# Without that the collector automatically degrades to telemetry-only mode.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: xsypher
+  labels:
+    app.kubernetes.io/name: xsypher-stream
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xsypher-rules
+  namespace: xsypher
+  labels:
+    app.kubernetes.io/name: xsypher-stream
+data:
+  # The production rule set lives in the repository; this ConfigMap carries an
+  # override your platform team can tune per cluster without rebuilding images.
+  rules.yaml: |
+    version: "2"
+    settings:
+      max_ancestry_depth: 8
+      cooldown_seconds: 5.0
+      verify_chain_on_start: true
+    rules:
+      - id: MCP_SHELL_BREAKOUT
+        title: "MCP/AI agent spawned an interactive shell"
+        severity: critical
+        enabled: true
+        event_types: [execve]
+        conditions:
+          exe_in: [sh, bash, zsh, dash, ksh, fish, csh, tcsh, tmux, screen, dtach]
+          ancestor_has_ai_runtime: true
+          ancestor_min_depth: 1
+        actions: [quarantine_cgroup, kill]
+      - id: MCP_RECON_OR_EXFIL_TOOL
+        title: "MCP/AI agent launched network or exfiltration tooling"
+        severity: high
+        enabled: true
+        event_types: [execve]
+        conditions:
+          exe_in:
+            [curl, wget, nc, ncat, netcat, socat, nmap, masscan, ssh, scp, sftp,
+             rsync, ftp, tftp, telnet, base64, xxd, od, chisel, ngrok]
+          ancestor_has_ai_runtime: true
+          ancestor_min_depth: 1
+        actions: [quarantine_pid, kill]
+      - id: CLOUD_IMDS_CREDENTIAL_THEFT
+        title: "Cloud metadata service (IMDS) credential theft"
+        severity: critical
+        enabled: true
+        event_types: [connect, lsm_block]
+        conditions:
+          daddr_in: ["169.254.169.254", "fd00:ec2::254"]
+          container_only: true
+        actions: [quarantine_cgroup, block_ipv4, kill]
+      - id: SENSITIVE_CREDENTIAL_HARVEST
+        title: "Sensitive credential file access"
+        severity: critical
+        enabled: true
+        event_types: [openat]
+        conditions:
+          exe_not_in:
+            [sshd, login, sudo, su, passwd, chpasswd, systemd, unix_chkpwd, polkitd,
+             gdm, lightdm, cron, crond, kubelet]
+          any_of:
+            - path_prefix_in:
+                ["/etc/shadow", "/etc/sudoers", "/etc/gshadow", "/root/.ssh",
+                 "/var/run/secrets/kubernetes.io/serviceaccount/token", "/proc/kcore"]
+            - path_suffix_in: [".env", ".pem", ".key"]
+            - path_contains: ["id_rsa", "id_ed25519", "id_ecdsa", "credentials.json"]
+        actions: [quarantine_pid, kill]
+      - id: FILELESS_MEMFD_EXECUTION
+        title: "Fileless payload staging via memfd / shm"
+        severity: critical
+        enabled: true
+        event_types: [memfd_create, execve]
+        conditions:
+          any_of:
+            - event_types: [memfd_create]
+            - exe_prefix_in: ["/memfd:", "/proc/self/fd/", "/dev/shm/", "/run/shm/"]
+        actions: [quarantine_cgroup, kill]
+      - id: SUSPICIOUS_OUTBOUND_C2_PORT
+        title: "Outbound connection to a reverse-shell/C2 port"
+        severity: high
+        enabled: true
+        event_types: [connect]
+        conditions:
+          dport_in: [4444, 1337, 31337, 5555, 6667, 9001]
+          container_or_comm_in:
+            [node, nodejs, python, python3, uvicorn, gunicorn, nginx, httpd, apache2,
+             php-fpm, java, ruby, deno, bun, mcp-server, claude-mcp]
+        actions: [quarantine_pid, block_ipv4, kill]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: xsypher
+  namespace: xsypher
+  labels:
+    app.kubernetes.io/name: xsypher-stream
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: xsypher-stream
+  namespace: xsypher
+  labels:
+    app.kubernetes.io/name: xsypher-stream
+    app.kubernetes.io/component: sensor
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: xsypher-stream
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 10%
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: xsypher-stream
+        app.kubernetes.io/component: sensor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9109"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: xsypher
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: Exists
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+        # ------------------------------------------------------------------ #
+        # eBPF collector (kernel side)                                       #
+        # ------------------------------------------------------------------ #
+        - name: collector
+          image: xsypher-stream:2.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--socket-path"
+            - "/run/xsypher/stream.sock"
+            - "--block-imds"
+            - "--enforce"
+          securityContext:
+            privileged: true
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: run
+              mountPath: /run/xsypher
+            - name: btf
+              mountPath: /sys/kernel/btf
+              readOnly: true
+            - name: bpf-fs
+              mountPath: /sys/fs/bpf
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+              readOnly: true
+            - name: proc
+              mountPath: /proc
+              readOnly: true
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "test -S /run/xsypher/stream.sock"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "test -S /run/xsypher/stream.sock"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+
+        # ------------------------------------------------------------------ #
+        # Python threat engine (policy side)                                 #
+        # ------------------------------------------------------------------ #
+        - name: engine
+          image: xsypher-stream:2.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-m", "engine.main"]
+          args:
+            - "--socket-path"
+            - "/run/xsypher/stream.sock"
+            - "--rules"
+            - "/etc/xsypher/rules.yaml"
+            - "--alert-log"
+            - "/var/log/xsypher/alerts.jsonl"
+            - "--metrics-port"
+            - "9109"
+            - "--metrics-host"
+            - "0.0.0.0"
+            - "--enforce-kernel"
+            - "--no-color"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          volumeMounts:
+            - name: run
+              mountPath: /run/xsypher
+            - name: rules
+              mountPath: /etc/xsypher
+              readOnly: true
+            - name: alerts
+              mountPath: /var/log/xsypher
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9109
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9109
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: btf
+          hostPath:
+            path: /sys/kernel/btf
+            type: Directory
+        - name: bpf-fs
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: rules
+          configMap:
+            name: xsypher-rules
+        - name: alerts
+          hostPath:
+            path: /var/log/xsypher
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xsypher-engine-metrics
+  namespace: xsypher
+  labels:
+    app.kubernetes.io/name: xsypher-stream
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9109"
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: xsypher-stream
+  ports:
+    - name: metrics
+      port: 9109
+      targetPort: 9109
+      protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: xsypher-stream
+  namespace: xsypher
+spec:
+  maxUnavailable: 25%
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: xsypher-stream

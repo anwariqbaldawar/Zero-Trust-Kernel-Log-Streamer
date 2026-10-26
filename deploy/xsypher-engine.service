@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# xSypher-Stream threat engine (policy side).
+#
+#   sudo install -m 0644 deploy/xsypher-engine.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now xsypher-engine
+#
+# The unprivileged service account is expected to exist:
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin xsypher
+#
+# The engine connects to the collector socket, so the collector unit is a hard
+# dependency. It needs no capabilities of its own: kernel enforcement travels
+# over the unix socket, and --active-kill (SIGKILL from user space) is optional.
+[Unit]
+Description=xSypher-Stream zero-trust threat engine and metrics exporter
+Documentation=https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer
+Requires=xsypher-collector.service
+After=xsypher-collector.service
+
+[Service]
+Type=simple
+User=xsypher
+Group=xsypher
+Environment=PYTHONPATH=/usr/local/lib/xsypher
+Environment=PYTHONUNBUFFERED=1
+Environment=XSYPHER_RULES=/etc/xsypher/rules.yaml
+ExecStart=/usr/bin/python3 -m engine.main \
+    --socket-path /run/xsypher/stream.sock \
+    --rules /etc/xsypher/rules.yaml \
+    --alert-log /var/log/xsypher/alerts.jsonl \
+    --metrics-host 0.0.0.0 \
+    --metrics-port 9109 \
+    --enforce-kernel \
+    --no-color
+Restart=on-failure
+RestartSec=3s
+StateDirectory=xsypher
+LogsDirectory=xsypher
+ReadWritePaths=/var/log/xsypher /run/xsypher
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
