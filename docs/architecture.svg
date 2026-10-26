@@ -1,0 +1,229 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 660" width="1280" height="660" role="img" aria-label="xSypher-Stream data flow: eBPF kernel probes to ring buffer, C++20 collector over AF_UNIX SOCK_SEQPACKET to the Python threat engine, and policy commands back into the BPF maps">
+  <title>xSypher-Stream architecture</title>
+  <desc>Three planes: kernel space eBPF CO-RE probes and LSM hooks, the C++20 libbpf collector, and the Python 3.12 policy engine. Telemetry flows right through a 16 MiB ring buffer and SEQPACKET frames; policy commands flow left back into the BPF maps.</desc>
+  <defs>
+    <linearGradient id="abg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#060910"/>
+      <stop offset="100%" stop-color="#0a0f1d"/>
+    </linearGradient>
+    <pattern id="adots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#1e293b" fill-opacity="0.9"/>
+    </pattern>
+    <linearGradient id="kline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#22d3ee" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="cline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#a78bfa" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </linearGradient>
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#22d3ee"/>
+    </marker>
+    <marker id="arrowViolet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#a78bfa"/>
+    </marker>
+    <filter id="aglow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style><![CDATA[
+      .mono { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace; }
+      .sans { font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .ptitle { font-size: 12.5px; font-weight: 800; letter-spacing: 3.4px; }
+      .psub { font-size: 11px; fill: #64748b; letter-spacing: .4px; }
+      .btitle { font-size: 12.5px; font-weight: 700; fill: #e2e8f0; }
+      .bitem { font-size: 11px; fill: #94a3b8; }
+      .chip { font-size: 10.5px; fill: #cbd5e1; }
+      .lane { font-size: 11px; fill: #7f8ca3; letter-spacing: .2px; }
+      .num { font-size: 10px; font-weight: 800; fill: #050810; }
+      .fade { opacity: 0; animation: in .8s ease-out forwards; }
+      .d1 { animation-delay: .1s; } .d2 { animation-delay: .3s; }
+      .d3 { animation-delay: .5s; } .d4 { animation-delay: .7s; }
+      #flowA { stroke-dasharray: 5 7; animation: dashA 1.6s linear infinite; }
+      #flowB { stroke-dasharray: 5 7; animation: dashB 1.6s linear infinite; }
+      #halo { animation: halo 3.4s ease-in-out infinite; }
+      .pulseRing { transform-box: fill-box; transform-origin: center; animation: ping 3s ease-out infinite; }
+      .p2 { animation-delay: 1s; } .p3 { animation-delay: 2s; }
+      @keyframes in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes dashA { to { stroke-dashoffset: -24; } }
+      @keyframes dashB { to { stroke-dashoffset: 24; } }
+      @keyframes halo { 0%,100% { opacity: .35; } 50% { opacity: .8; } }
+      @keyframes ping { 0% { opacity: .55; transform: scale(.7); } 80%,100% { opacity: 0; transform: scale(1.8); } }
+      @media (prefers-reduced-motion: reduce) { * { animation: none !important; } .fade { opacity: 1; } }
+    ]]></style>
+  </defs>
+
+  <rect width="1280" height="660" fill="url(#abg)"/>
+  <rect width="1280" height="660" fill="url(#adots)" opacity="0.55"/>
+
+  <!-- ================= header ================= -->
+  <g class="sans fade d1">
+    <text x="28" y="40" class="ptitle" fill="#e2e8f0">PROCESSING PIPELINE</text>
+    <text x="28" y="60" class="psub">every arrow is a real, measured hop · ABI v2 · little-endian wire format</text>
+  </g>
+  <g class="mono fade d2">
+    <circle cx="1008" cy="34" r="4" fill="#22d3ee"/>
+    <text x="1020" y="38" class="lane">telemetry</text>
+    <circle cx="1108" cy="34" r="4" fill="#a78bfa"/>
+    <text x="1120" y="38" class="lane">policy</text>
+  </g>
+
+  <!-- ================= panel 1: kernel ================= -->
+  <g class="fade d2">
+    <rect x="28" y="92" width="372" height="396" rx="14" fill="#080d18" stroke="#16233a" stroke-width="1.2"/>
+    <rect x="28" y="92" width="372" height="4" rx="2" fill="url(#kline)" opacity="0.8"/>
+    <text x="50" y="126" class="sans ptitle" fill="#22d3ee">KERNEL SPACE</text>
+    <text x="50" y="145" class="mono psub">eBPF CO-RE · BPF_PROG · verifier-safe</text>
+
+    <!-- tracepoints -->
+    <rect x="50" y="160" width="328" height="122" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="66" y="182" class="sans btitle">tracepoints</text>
+    <text x="66" y="200" class="mono bitem">sys_enter_execve       → argv[0..3]</text>
+    <text x="66" y="217" class="mono bitem">sys_enter_connect      → AF_INET/6</text>
+    <text x="66" y="234" class="mono bitem">sys_enter_openat       → filtered</text>
+    <text x="66" y="251" class="mono bitem">sys_enter_memfd_create → fileless</text>
+    <text x="66" y="268" class="mono bitem">sched_process_exit     → pid-reuse</text>
+
+    <!-- lsm -->
+    <rect x="50" y="292" width="328" height="86" rx="10" fill="#141020" stroke="#3b2b56"/>
+    <text x="66" y="314" class="sans btitle" fill="#c4b5fd">BPF LSM hooks · inline enforcement</text>
+    <text x="66" y="332" class="mono bitem">bprm_check_security · socket_connect</text>
+    <text x="66" y="349" class="mono bitem">file_open</text>
+    <text x="238" y="349" class="mono" font-size="11" fill="#f87171" font-weight="700">return -EPERM</text>
+
+    <!-- maps -->
+    <rect x="50" y="388" width="328" height="76" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="66" y="408" class="sans btitle">BPF maps</text>
+    <g class="mono chip">
+      <rect x="66" y="418" width="146" height="20" rx="6" fill="#0f1c30" stroke="#22314c"/><text x="76" y="432">events_ringbuf</text>
+      <rect x="220" y="418" width="142" height="20" rx="6" fill="#0f1c30" stroke="#22314c"/><text x="230" y="432">quarantine_*</text>
+      <rect x="66" y="442" width="146" height="20" rx="6" fill="#0f1c30" stroke="#22314c"/><text x="76" y="456">blocked_ipv4</text>
+      <rect x="220" y="442" width="142" height="20" rx="6" fill="#0f1c30" stroke="#22314c"/><text x="230" y="456">config · metrics</text>
+    </g>
+    <circle cx="50" cy="104" r="11" fill="#22d3ee"/>
+    <text x="50" y="108" class="sans num" text-anchor="middle">1</text>
+  </g>
+
+  <!-- ================= panel 2: collector ================= -->
+  <g class="fade d3">
+    <rect x="456" y="92" width="352" height="396" rx="14" fill="#080d18" stroke="#16233a" stroke-width="1.2"/>
+    <rect x="456" y="92" width="352" height="4" rx="2" fill="url(#cline)" opacity="0.8"/>
+    <text x="478" y="126" class="sans ptitle" fill="#a78bfa">USER SPACE</text>
+    <text x="478" y="145" class="mono psub">xsypher-collector · C++20 · libbpf</text>
+
+    <rect x="478" y="160" width="308" height="60" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="494" y="182" class="sans btitle">ring_buffer__poll()</text>
+    <text x="494" y="201" class="mono bitem">epoll-driven · 16 MiB · zero copy</text>
+
+    <rect x="478" y="230" width="308" height="60" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="494" y="252" class="sans btitle">cgroup_resolver</text>
+    <text x="494" y="271" class="mono bitem">LRU + 5 s TTL → 64-hex container id</text>
+
+    <rect x="478" y="300" width="308" height="60" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="494" y="322" class="sans btitle">uds_server</text>
+    <text x="494" y="341" class="mono bitem">AF_UNIX · SOCK_SEQPACKET · seq_no</text>
+
+    <rect x="478" y="370" width="308" height="60" rx="10" fill="#141020" stroke="#3b2b56"/>
+    <text x="494" y="392" class="sans btitle" fill="#c4b5fd">policy applier</text>
+    <text x="494" y="411" class="mono bitem">bpf_map_update_elem() · immediate</text>
+
+    <circle cx="478" cy="104" r="11" fill="#a78bfa"/>
+    <text x="478" y="108" class="sans num" text-anchor="middle">2</text>
+  </g>
+
+  <!-- ================= panel 3: engine ================= -->
+  <g class="fade d4">
+    <rect x="864" y="92" width="388" height="396" rx="14" fill="#080d18" stroke="#16233a" stroke-width="1.2"/>
+    <rect x="864" y="92" width="388" height="4" rx="2" fill="#34d399" opacity="0.7"/>
+    <text x="886" y="126" class="sans ptitle" fill="#34d399">POLICY PLANE</text>
+    <text x="886" y="145" class="mono psub">engine · Python 3.12 · asyncio</text>
+
+    <rect x="886" y="160" width="344" height="56" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="902" y="182" class="sans btitle">decode_wire_frame()</text>
+    <text x="902" y="200" class="mono bitem">strict 720 B · magic + version checks</text>
+
+    <rect x="886" y="226" width="344" height="56" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="902" y="248" class="sans btitle">lineage graph</text>
+    <text x="902" y="266" class="mono bitem">bounded · 5 s grace · ancestry</text>
+
+    <rect x="886" y="292" width="344" height="56" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="902" y="314" class="sans btitle">rule engine</text>
+    <text x="902" y="332" class="mono bitem">YAML · 6 detections · p99 &lt; 20 µs</text>
+
+    <rect x="886" y="358" width="344" height="56" rx="10" fill="#141020" stroke="#3b2b56"/>
+    <text x="902" y="380" class="sans btitle" fill="#c4b5fd">mitigator</text>
+    <text x="902" y="398" class="mono bitem">quarantine · block · kill · audit</text>
+
+    <rect x="886" y="424" width="344" height="46" rx="10" fill="#0b1424" stroke="#1c2b45"/>
+    <text x="902" y="444" class="sans btitle">/metrics · JSONL</text>
+    <text x="1040" y="444" class="mono bitem">prometheus + SHA-256 chain</text>
+
+    <circle cx="886" cy="104" r="11" fill="#34d399"/>
+    <text x="886" y="108" class="sans num" text-anchor="middle">3</text>
+  </g>
+
+  <!-- ================= inter-panel flows ================= -->
+  <!-- telemetry: kernel -> collector -->
+  <g>
+    <line x1="404" y1="200" x2="450" y2="200" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrowCyan)"/>
+    <circle r="3.5" fill="#a5f3fc" filter="url(#aglow)">
+      <animateMotion dur="1.6s" repeatCount="indefinite" path="M404 200 L448 200"/>
+      <animate attributeName="opacity" values="0;1;1;0" dur="1.6s" repeatCount="indefinite"/>
+    </circle>
+    <text x="427" y="188" class="mono" font-size="9.5" fill="#67e8f9" text-anchor="middle">640 B</text>
+  </g>
+  <!-- telemetry: collector -> engine -->
+  <g>
+    <line x1="812" y1="200" x2="858" y2="200" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrowCyan)"/>
+    <circle r="3.5" fill="#a5f3fc" filter="url(#aglow)">
+      <animateMotion dur="1.6s" begin="0.4s" repeatCount="indefinite" path="M812 200 L856 200"/>
+      <animate attributeName="opacity" values="0;1;1;0" dur="1.6s" begin="0.4s" repeatCount="indefinite"/>
+    </circle>
+    <text x="835" y="188" class="mono" font-size="9.5" fill="#67e8f9" text-anchor="middle">720 B</text>
+  </g>
+  <!-- policy: engine -> collector -->
+  <g>
+    <line x1="856" y1="390" x2="814" y2="390" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrowViolet)"/>
+    <circle r="3.5" fill="#c4b5fd" filter="url(#aglow)">
+      <animateMotion dur="1.5s" begin="0.2s" repeatCount="indefinite" path="M856 390 L816 390"/>
+      <animate attributeName="opacity" values="0;1;1;0" dur="1.5s" begin="0.2s" repeatCount="indefinite"/>
+    </circle>
+    <text x="835" y="378" class="mono" font-size="9.5" fill="#c4b5fd" text-anchor="middle">32 B</text>
+  </g>
+  <!-- policy: collector -> kernel -->
+  <g>
+    <line x1="450" y1="390" x2="408" y2="390" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrowViolet)"/>
+    <circle r="3.5" fill="#c4b5fd" filter="url(#aglow)">
+      <animateMotion dur="1.5s" begin="0.6s" repeatCount="indefinite" path="M450 390 L410 390"/>
+      <animate attributeName="opacity" values="0;1;1;0" dur="1.5s" begin="0.6s" repeatCount="indefinite"/>
+    </circle>
+    <text x="427" y="378" class="mono" font-size="9.5" fill="#c4b5fd" text-anchor="middle">map</text>
+  </g>
+
+  <!-- ================= protocol lanes ================= -->
+  <g class="fade d4">
+    <rect x="28" y="516" width="1224" height="120" rx="14" fill="#080d18" stroke="#16233a"/>
+    <text x="50" y="542" class="sans ptitle" font-size="11" fill="#8b9bb4">WIRE PROTOCOL</text>
+
+    <!-- lane A -->
+    <text x="50" y="574" class="mono lane" fill="#67e8f9">TELEMETRY</text>
+    <line x1="140" y1="570" x2="1216" y2="570" stroke="#0e2b38" stroke-width="2"/>
+    <line id="flowA" x1="140" y1="570" x2="1216" y2="570" stroke="#22d3ee" stroke-width="2" opacity="0.9"/>
+    <text x="156" y="562" class="mono bitem" fill="#94a3b8">kernel_event_t 640 B</text>
+    <text x="392" y="562" class="mono bitem" fill="#94a3b8">BPF_MAP_TYPE_RINGBUF 16 MiB</text>
+    <text x="700" y="562" class="mono bitem" fill="#94a3b8">wire_event_msg_t 720 B</text>
+    <text x="960" y="562" class="mono bitem" fill="#94a3b8">SOCK_SEQPACKET · 1 datagram = 1 event</text>
+
+    <!-- lane B -->
+    <text x="50" y="618" class="mono lane" fill="#c4b5fd">POLICY</text>
+    <line x1="140" y1="614" x2="1216" y2="614" stroke="#221a38" stroke-width="2"/>
+    <line id="flowB" x1="140" y1="614" x2="1216" y2="614" stroke="#a78bfa" stroke-width="2" opacity="0.9"/>
+    <text x="156" y="606" class="mono bitem" fill="#94a3b8">wire_policy_cmd_t 32 B</text>
+    <text x="392" y="606" class="mono bitem" fill="#94a3b8">bpf_map_update_elem()</text>
+    <text x="640" y="606" class="mono bitem" fill="#94a3b8">quarantined_cgroups_map</text>
+    <text x="900" y="606" class="mono bitem" fill="#94a3b8">LSM returns -EPERM before the syscall completes</text>
+  </g>
+</svg>

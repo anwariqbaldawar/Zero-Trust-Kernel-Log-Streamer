@@ -1,0 +1,147 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------------------- #
+  # Fast feedback: Python engine, ABI parity, end-to-end simulation.      #
+  # Runs on any runner; no kernel privileges required.                    #
+  # --------------------------------------------------------------------- #
+  engine:
+    name: engine · ABI · simulation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: ABI parity (C header vs ctypes)
+        run: ./scripts/verify_and_benchmark.sh --quick
+
+      - name: Unit tests
+        run: PYTHONPATH=src python -m pytest tests -q --maxfail=1
+
+      - name: End-to-end MCP attack simulation (10k events + 5 chains)
+        run: PYTHONPATH=src python tests/simulate_mcp_attack.py --events 10000
+
+      - name: Upload audit log artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xsypher-alerts
+          path: /tmp/xsypher-alerts.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # --------------------------------------------------------------------- #
+  # Authoritative build: BPF object, libbpf skeleton, C++20 collector.    #
+  # Needs clang + bpftool + libbpf, which the runner provides.            #
+  # --------------------------------------------------------------------- #
+  build:
+    name: kernel object · collector
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang llvm bpftool libbpf-dev libelf-dev zlib1g-dev \
+            build-essential cmake pkg-config
+
+      - name: Show toolchain versions
+        run: |
+          clang --version | head -1
+          g++ --version | head -1
+          bpftool version
+          pkg-config --modversion libbpf || true
+
+      - name: Generate vmlinux.h (falls back to the documented stub)
+        run: ./scripts/gen_vmlinux.sh include/vmlinux.h
+
+      - name: Build BPF object, skeleton and collector
+        run: make -j"$(nproc)" all 2>&1 | tee build.log
+
+      - name: Fail on compiler warnings
+        run: |
+          if grep -E "warning:" build.log; then
+            echo "::error::compiler warnings detected"; exit 1
+          fi
+          echo "no warnings"
+
+      - name: Inspect the BPF object
+        run: |
+          file build/xsypher.bpf.o
+          llvm-objdump -h build/xsypher.bpf.o | sed -n '1,20p'
+          grep -c "SEC" build/xsypher.skel.h
+
+      - name: CMake build + ctest
+        run: |
+          cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-cmake -j"$(nproc)"
+          ctest --test-dir build-cmake --output-on-failure
+
+      - name: Re-run verification with the full toolchain
+        run: ./scripts/verify_and_benchmark.sh --quick
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xsypher-collector
+          path: build/xsypher-collector
+          retention-days: 7
+
+  # --------------------------------------------------------------------- #
+  # Determinism: the same rule document must behave identically for both   #
+  # copies that ship (repository + Kubernetes ConfigMap).                 #
+  # --------------------------------------------------------------------- #
+  rules-parity:
+    name: rule documents in sync
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Validate rules.yaml and the ConfigMap copy
+        run: |
+          python - <<'PY'
+          import sys, yaml
+          sys.path.insert(0, "src")
+          from engine.rule_engine import RuleEngine
+
+          repo = RuleEngine.from_file("config/rules.yaml")
+          docs = list(yaml.safe_load_all(open("deploy/kubernetes-daemonset.yaml")))
+          cmap = [d for d in docs if d and d.get("kind") == "ConfigMap"][0]
+          deployed = RuleEngine.from_document(yaml.safe_load(cmap["data"]["rules.yaml"]))
+
+          repo_ids = [r.id for r in repo.rules]
+          dep_ids = [r.id for r in deployed.rules]
+          print("repository rules:", repo_ids)
+          print("configmap  rules:", dep_ids)
+          if repo_ids != dep_ids:
+              print("::error::config/rules.yaml and the Kubernetes ConfigMap drifted")
+              sys.exit(1)
+          print("rule documents in sync")
+          PY

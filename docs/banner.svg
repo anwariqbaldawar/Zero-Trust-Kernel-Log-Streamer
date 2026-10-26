@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="xSypher-Stream — zero-trust kernel telemetry and inline LSM enforcement">
+  <title>xSypher-Stream</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#05070d"/>
+      <stop offset="45%" stop-color="#0a1120"/>
+      <stop offset="100%" stop-color="#0c0a1b"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e2e8f0">
+        <animate attributeName="stop-color" values="#e2e8f0;#a5b4fc;#67e8f9;#e2e8f0" dur="14s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="55%" stop-color="#67e8f9">
+        <animate attributeName="stop-color" values="#67e8f9;#c4b5fd;#7dd3fc;#67e8f9" dur="14s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" stop-color="#a78bfa">
+        <animate attributeName="stop-color" values="#a78bfa;#67e8f9;#a5b4fc;#a78bfa" dur="14s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="scanGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#22d3ee" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="dividerGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0"/>
+      <stop offset="35%" stop-color="#22d3ee" stop-opacity="0.9"/>
+      <stop offset="65%" stop-color="#a78bfa" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width="1" stroke-opacity="0.55"/>
+    </pattern>
+    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="blur24" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <style><![CDATA[
+      .fade { opacity: 0; animation: fadeUp .9s cubic-bezier(.22,.61,.36,1) forwards; }
+      .d1 { animation-delay: .15s; }
+      .d2 { animation-delay: .35s; }
+      .d3 { animation-delay: .60s; }
+      .d4 { animation-delay: .85s; }
+      .d5 { animation-delay: 1.10s; }
+      .d6 { animation-delay: 1.35s; }
+      .mono { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace; }
+      .sans { font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .kicker { font-size: 13px; font-weight: 700; letter-spacing: 4.2px; fill: #7dd3fc; }
+      .title { font-size: 66px; font-weight: 800; letter-spacing: -1.6px; fill: url(#titleGrad); }
+      .subtitle { font-size: 18px; font-weight: 500; fill: #94a3b8; letter-spacing: .2px; }
+      .pillText { font-size: 12.5px; font-weight: 600; fill: #cbd5e1; letter-spacing: .3px; }
+      .tick { font-size: 11px; fill: #475569; letter-spacing: 1.5px; }
+      #scan { animation: scan 7s linear infinite; }
+      #ring { transform-box: fill-box; transform-origin: center; animation: spin 26s linear infinite; }
+      #ring2 { transform-box: fill-box; transform-origin: center; animation: spin 34s linear infinite reverse; }
+      #shieldPulse { transform-box: fill-box; transform-origin: center; animation: pulse 4.5s ease-in-out infinite; }
+      #glowA { animation: breathe 7s ease-in-out infinite; }
+      #glowB { animation: breathe 9s ease-in-out infinite 1.2s; }
+      #gridDrift { animation: drift 18s linear infinite; }
+      #divider { animation: sweep 5.5s ease-in-out infinite; }
+      @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes scan { 0% { transform: translateY(-6px); } 100% { transform: translateY(366px); } }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes pulse { 0%,100% { transform: scale(1); opacity: .95; } 50% { transform: scale(1.04); opacity: 1; } }
+      @keyframes breathe { 0%,100% { opacity: .55; } 50% { opacity: .95; } }
+      @keyframes drift { from { transform: translateY(0); } to { transform: translateY(40px); } }
+      @keyframes sweep { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { * { animation: none !important; } .fade { opacity: 1; } }
+    ]]></style>
+  </defs>
+
+  <!-- background -->
+  <rect width="1280" height="360" fill="url(#bg)"/>
+  <g id="gridDrift" opacity="0.5">
+    <rect x="0" y="-40" width="1280" height="440" fill="url(#grid)"/>
+  </g>
+  <circle id="glowA" cx="205" cy="180" r="230" fill="url(#glowViolet)" filter="url(#blur24)"/>
+  <circle id="glowB" cx="1090" cy="70" r="200" fill="url(#glowCyan)" filter="url(#blur24)"/>
+
+  <!-- scanline -->
+  <rect id="scan" x="0" y="0" width="1280" height="2" fill="url(#scanGrad)"/>
+
+  <!-- hardware ticks -->
+  <g stroke="#334155" stroke-width="1.5" opacity="0.7">
+    <path d="M24 24h22M24 24v22"/>
+    <path d="M1256 24h-22M1256 24v22"/>
+    <path d="M24 336h22M24 336v-22"/>
+    <path d="M1256 336h-22M1256 336v-22"/>
+  </g>
+
+  <!-- shield mark -->
+  <g transform="translate(205 178)">
+    <circle id="ring" r="92" fill="none" stroke="#22d3ee" stroke-opacity="0.30" stroke-width="1.4" stroke-dasharray="5 12"/>
+    <circle id="ring2" r="106" fill="none" stroke="#a78bfa" stroke-opacity="0.20" stroke-width="1" stroke-dasharray="2 16"/>
+    <g id="shieldPulse" filter="url(#softGlow)">
+      <path d="M0 -62 L54 -38 C54 -38 60 26 0 62 C-60 26 -54 -38 -54 -38 Z"
+            fill="#0b1224" stroke="url(#shieldGrad)" stroke-width="2.4"/>
+      <path d="M0 -46 L40 -28 C40 -28 44 18 0 46 C-44 18 -40 -28 -40 -28 Z"
+            fill="#22d3ee" fill-opacity="0.06" stroke="#22d3ee" stroke-opacity="0.35" stroke-width="1"/>
+      <!-- keyhole / zero-trust glyph -->
+      <circle cx="0" cy="-8" r="9" fill="none" stroke="#67e8f9" stroke-width="2.6"/>
+      <path d="M0 1 v22" stroke="#67e8f9" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M-13 -8 h26" stroke="#a78bfa" stroke-opacity="0.55" stroke-width="1.2"/>
+    </g>
+  </g>
+
+  <!-- copy -->
+  <g class="sans">
+    <text class="kicker fade d1" x="345" y="104">ZERO-TRUST KERNEL TELEMETRY</text>
+    <text class="title fade d2" x="341" y="176">xSypher-Stream</text>
+    <text class="subtitle fade d3" x="345" y="212">eBPF CO-RE · C++20 collector · Python 3.12 threat engine · inline LSM enforcement</text>
+  </g>
+
+  <!-- capability pills -->
+  <g class="mono fade d4">
+    <rect x="345" y="248" width="228" height="34" rx="17" fill="#0f172a" stroke="#1f2b45"/>
+    <text class="pillText" x="367" y="270">ringbuf · 16 MiB · lockless</text>
+    <rect x="585" y="248" width="196" height="34" rx="17" fill="#0f172a" stroke="#1f2b45"/>
+    <text class="pillText" x="607" y="270">720 B wire frames</text>
+    <rect x="793" y="248" width="176" height="34" rx="17" fill="#0f172a" stroke="#1f2b45"/>
+    <text class="pillText" x="815" y="270">p99 &lt; 20 µs</text>
+    <rect x="981" y="248" width="150" height="34" rx="17" fill="#0f172a" stroke="#1f2b45"/>
+    <text class="pillText" x="1003" y="270">6 detections</text>
+  </g>
+
+  <g class="mono fade d5">
+    <text class="tick" x="345" y="312">KERNEL → COLLECTOR → ENGINE → POLICY → -EPERM</text>
+  </g>
+
+  <!-- baseline -->
+  <rect id="divider" x="0" y="355" width="1280" height="3" fill="url(#dividerGrad)"/>
+</svg>
