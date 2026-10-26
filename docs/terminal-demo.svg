@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 560" width="1180" height="560" role="img" aria-label="Animated terminal recording of the xSypher-Stream engine: telemetry lines stream in, a critical alert block appears, and the hash-chained audit record is written">
+  <title>xSypher-Stream live monitor</title>
+  <desc>Simulated terminal session: benign telemetry streams, an MCP shell breakout alert is raised, kernel quarantine commands are sent and a chained audit record is written.</desc>
+  <defs>
+    <linearGradient id="tbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b0f18"/>
+      <stop offset="100%" stop-color="#070a11"/>
+    </linearGradient>
+    <filter id="tglow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style><![CDATA[
+      .mono { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace; }
+      text { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
+      .dim  { fill: #475569; }
+      .txt  { fill: #cbd5e1; }
+      .cyan { fill: #67e8f9; }
+      .green{ fill: #34d399; }
+      .amber{ fill: #fbbf24; }
+      .red  { fill: #f87171; }
+      .violet{ fill: #c4b5fd; }
+      .white{ fill: #e2e8f0; }
+      .l { opacity: 0; animation: type 16s steps(1, end) infinite; }
+      .l1  { animation-delay: .2s; }  .l2  { animation-delay: .9s; }
+      .l3  { animation-delay: 1.5s; } .l4  { animation-delay: 2.0s; }
+      .l5  { animation-delay: 2.5s; } .l6  { animation-delay: 3.0s; }
+      .l7  { animation-delay: 3.4s; } .l8  { animation-delay: 3.9s; }
+      .l9  { animation-delay: 4.3s; } .l10 { animation-delay: 4.7s; }
+      .l11 { animation-delay: 5.1s; } .l12 { animation-delay: 5.6s; }
+      .l13 { animation-delay: 6.2s; } .l14 { animation-delay: 6.6s; }
+      .l15 { animation-delay: 7.0s; } .l16 { animation-delay: 7.4s; }
+      .l17 { animation-delay: 7.8s; } .l18 { animation-delay: 8.4s; }
+      .l19 { animation-delay: 9.0s; } .l20 { animation-delay: 9.6s; }
+      .l21 { animation-delay: 10.2s; } .l22 { animation-delay: 10.8s; }
+      .l23 { animation-delay: 11.4s; }
+      @keyframes type {
+        0%        { opacity: 0; }
+        1.2%, 90% { opacity: 1; }
+        100%      { opacity: 0; }
+      }
+      #cursor { animation: blink 1.05s steps(1, end) infinite; }
+      #alertBox { animation: alertFlash 16s ease-out infinite; }
+      #shield { animation: shieldPulse 2.6s ease-in-out infinite; }
+      @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+      @keyframes alertFlash { 0%, 34% { opacity: .18; } 38%, 92% { opacity: .9; } 100% { opacity: .18; } }
+      @keyframes shieldPulse { 0%, 100% { opacity: .55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+      @media (prefers-reduced-motion: reduce) { * { animation: none !important; } .l { opacity: 1; } #cursor { opacity: 1; } }
+    ]]></style>
+  </defs>
+
+  <rect width="1180" height="560" rx="14" fill="url(#tbg)"/>
+  <rect x="0.5" y="0.5" width="1179" height="559" rx="14" fill="none" stroke="#1b2537"/>
+
+  <!-- title bar -->
+  <path d="M0 14a14 14 0 0 1 14-14h1152a14 14 0 0 1 14 14v26H0z" fill="#0e141f"/>
+  <circle cx="24" cy="21" r="5.5" fill="#f87171" fill-opacity="0.85"/>
+  <circle cx="44" cy="21" r="5.5" fill="#fbbf24" fill-opacity="0.85"/>
+  <circle cx="64" cy="21" r="5.5" fill="#34d399" fill-opacity="0.85"/>
+  <text x="590" y="26" text-anchor="middle" class="dim" font-size="11.5">xsypher-engine — /run/xsypher/stream.sock — INLINE_BLOCK</text>
+
+  <!-- body -->
+  <g class="l l1">
+    <text x="24" y="70" class="white" font-weight="700">xSypher-Stream</text>
+    <text x="140" y="70" class="dim">zero-trust kernel telemetry &amp; inline LSM enforcement</text>
+  </g>
+  <g class="l l2">
+    <text x="24" y="90" class="cyan">mode=</text>
+    <rect x="66" y="79" width="104" height="15" rx="3" fill="#7f1d1d"/>
+    <text x="74" y="91" class="red" font-weight="700">INLINE_BLOCK</text>
+    <text x="182" y="90" class="txt">rules=6 kill=off collector=connected socket=/run/xsypher/stream.sock</text>
+  </g>
+  <g class="l l3"><text x="24" y="110" class="dim">metrics=http://0.0.0.0:9109/metrics</text><text x="300" y="110" class="dim">(Ctrl-C to stop)</text></g>
+  <g class="l l4"><text x="24" y="132" class="green">[ok]</text><text x="66" y="132" class="txt">loaded 6 rules from config/rules.yaml; alert log /var/log/xsypher-alerts.jsonl (chain seq=0)</text></g>
+  <g class="l l5"><text x="24" y="150" class="green">[ok]</text><text x="66" y="150" class="txt">prometheus exporter listening on 0.0.0.0:9109/metrics</text></g>
+  <g class="l l6"><text x="24" y="172" class="dim">────────────────────────────────────────────────────────────────────────────</text></g>
+
+  <!-- benign telemetry -->
+  <g class="l l7">
+    <text x="24" y="194" class="dim">14:02:11.084</text>
+    <text x="118" y="194" class="green">EXEC </text>
+    <text x="168" y="194" class="txt">pid=2411 tgid=2411 cont=9f2c1a</text>
+    <text x="352" y="194" class="white">node</text>
+    <text x="400" y="194" class="dim">/usr/bin/node</text>
+  </g>
+  <g class="l l8">
+    <text x="24" y="212" class="dim">14:02:11.091</text>
+    <text x="118" y="212" class="cyan">CONN </text>
+    <text x="168" y="212" class="txt">pid=2411 tgid=2411 cont=9f2c1a</text>
+    <text x="352" y="212" class="white">node</text>
+    <text x="400" y="212" class="dim">-&gt; 10.0.4.31:5432</text>
+  </g>
+  <g class="l l9">
+    <text x="24" y="230" class="dim">14:02:11.104</text>
+    <text x="118" y="230" class="green">EXEC </text>
+    <text x="168" y="230" class="txt">pid=2412 tgid=2412 cont=9f2c1a</text>
+    <text x="352" y="230" class="white">python3</text>
+    <text x="400" y="230" class="dim">/usr/bin/python3 -m agent_runtime</text>
+  </g>
+
+  <!-- alert -->
+  <g id="alertBox"><rect x="16" y="242" width="1148" height="176" rx="8" fill="#1a0d12" fill-opacity="0.55" stroke="#7f1d1d"/></g>
+  <g class="l l10"><text x="32" y="264" class="red" font-weight="700">╔═ ALERT 5f26e3f956c98122 ════════════════════</text></g>
+  <g class="l l11">
+    <text x="32" y="284" class="red" font-weight="700">║ CRITICAL MCP_SHELL_BREAKOUT</text>
+  </g>
+  <g class="l l12">
+    <text x="32" y="302" class="white">║ MCP/AI agent spawned an interactive shell</text>
+  </g>
+  <g class="l l13">
+    <text x="32" y="320" class="txt">║ subject : sh pid=2413 tgid=2413 uid=1000 container=9f2c1a4d8e77</text>
+  </g>
+  <g class="l l14">
+    <text x="32" y="338" class="txt">║ observed: /bin/sh -c 'curl http://169.254.169.254/latest/meta-data/iam/'</text>
+  </g>
+  <g class="l l15">
+    <text x="32" y="356" class="violet">║ lineage : mcp-server -&gt; python3 -&gt; sh[2413]</text>
+  </g>
+  <g class="l l16">
+    <text x="32" y="374" class="cyan">║ actions : quarantine_cgroup(0xA001)=ok, kill(skipped, --active-kill off)</text>
+  </g>
+  <g class="l l17">
+    <text x="32" y="392" class="red" font-weight="700">║ kernel  : LSM socket_connect -&gt; -EPERM (IMDS denied)</text>
+    <text x="700" y="392" class="dim">2.2 ms round-trip</text>
+  </g>
+  <g class="l l18"><text x="32" y="410" class="dim">╚════════════════════════════════════════</text></g>
+
+  <!-- audit + metrics -->
+  <g class="l l19">
+    <text x="24" y="440" class="dim">{"alert_id":"5f26e3f956c98122","rule":"MCP_SHELL_BREAKOUT","severity":"critical",</text>
+  </g>
+  <g class="l l20">
+    <text x="24" y="456" class="dim"> "prev_hash":"0000000000000000…","hash":"5f26e3f956c98122…","sequence":0}</text>
+  </g>
+  <g class="l l21">
+    <text x="24" y="480" class="green">[ok]</text>
+    <text x="66" y="480" class="txt">quarantine applied in kernel · audit record hash-chained (seq=0)</text>
+  </g>
+  <g class="l l22">
+    <text x="24" y="504" class="dim">xsypher_alerts_total{rule="MCP_SHELL_BREAKOUT",severity="critical"} 1</text>
+    <text x="640" y="504" class="dim">xsypher_mitigations_total{action="quarantine_cgroup"} 1</text>
+  </g>
+  <g class="l l23">
+    <text x="24" y="528" class="cyan">$</text>
+    <rect id="cursor" x="38" y="517" width="8" height="14" fill="#67e8f9" filter="url(#tglow)"/>
+    <text x="60" y="528" class="dim">watching … (10,016 events/s, 0 drops)</text>
+  </g>
+
+  <!-- shield watermark -->
+  <g id="shield" transform="translate(1086 480)" opacity="0.5">
+    <path d="M0 -26 L24 -16 C24 -16 26 10 0 26 C-26 10 -24 -16 -24 -16 Z" fill="none" stroke="#22d3ee" stroke-width="1.6"/>
+    <circle cx="0" cy="-4" r="4" fill="none" stroke="#22d3ee" stroke-width="1.6"/>
+    <path d="M0 0 v10" stroke="#22d3ee" stroke-width="1.6"/>
+  </g>
+</svg>
