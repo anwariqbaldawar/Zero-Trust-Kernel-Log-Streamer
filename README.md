@@ -1,9 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
-    <img src="assets/logo-light.svg" alt="xSypher-Stream: a hexagon with three telemetry paths stopped by one enforcement bar" width="560">
-  </picture>
+  <img src="assets/logo-hero.svg" alt="xSypher-Stream wordmark: emblem and project name, black ink on light themes and white ink on dark themes, with a crimson accent and glow" width="880">
 </p>
 
 <h1 align="center">xSypher-Stream</h1>

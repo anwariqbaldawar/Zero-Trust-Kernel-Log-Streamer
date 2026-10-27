@@ -23,8 +23,10 @@ DOCS = ["README.md", "CONTRIBUTING.md", "SECURITY.md"]
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".pytest_cache"}
 ANCHOR_IGNORE = re.compile(r"^\s*(```|~~~)")
 # Assets consumed outside the Markdown: the social preview and banner are
-# uploaded in repository settings, so no document can reference them.
-EXTERNAL_ASSETS = {"social-preview.svg", "banner.svg"}
+# uploaded in repository settings, so no document can reference them. The
+# hexagon mark pair is retained for external use (docs site, package pages);
+# the README hero is the self-theming assets/logo-hero.svg.
+EXTERNAL_ASSETS = {"social-preview.svg", "banner.svg", "logo-dark.svg", "logo-light.svg"}
 
 
 def documents() -> list[Path]:
