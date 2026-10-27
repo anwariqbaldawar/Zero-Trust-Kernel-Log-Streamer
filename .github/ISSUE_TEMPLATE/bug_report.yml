@@ -1,0 +1,68 @@
+name: Bug report
+description: Something behaves differently from what the documentation says
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security problems here. Use the private advisory flow described in SECURITY.md.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - kernel program (src/bpf)
+        - collector (src/collector)
+        - engine (src/engine)
+        - rule document (config/rules.yaml)
+        - deploy (Docker, compose, DaemonSet, systemd)
+        - docs or figures
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 2.0.0, or the output of git rev-parse HEAD
+    validations:
+      required: true
+  - type: textarea
+    id: kernel
+    attributes:
+      label: Kernel and privilege facts
+      description: uname -r, architecture, and whether CONFIG_BPF_LSM is enabled and lsm=bpf is on the command line.
+      placeholder: |
+        6.8.0-45-generic x86_64
+        CONFIG_BPF_LSM=y, lsm=lockdown,capability,landlock,yama,bpf
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Paste the output. Redact container ids if you need to.
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The smallest command or rule document that shows the problem.
+      render: shell
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I ran `make verify` and pasted the summary.
+        - label: This is not a security report (those go through SECURITY.md).
+          required: true

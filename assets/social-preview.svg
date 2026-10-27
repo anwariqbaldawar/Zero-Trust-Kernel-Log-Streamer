@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640"
+     width="1280" height="640" role="img"
+     aria-label="xSypher-Stream social preview card">
+  <title>xSypher-Stream social preview</title>
+  <desc>Repository card: the hexagon mark, the project name, a one line description and the enforced invariants.</desc>
+  <rect width="1280" height="640" fill="#0b1220"/>
+  <rect x="0" y="0" width="1280" height="6" fill="#38bdf8"/>
+  <g transform="translate(96 116)">
+    <path d="M 159.50 88.00 L 123.75 149.92 L 52.25 149.92 L 16.50 88.00 L 52.25 26.08 L 123.75 26.08 Z" fill="none" stroke="#38bdf8" stroke-width="8.25" stroke-linejoin="round"/>
+    <line x1="41.25" y1="68.75" x2="107.25" y2="68.75" stroke="#38bdf8" stroke-width="5.50" stroke-linecap="round"/>
+    <line x1="41.25" y1="88.00" x2="107.25" y2="88.00" stroke="#38bdf8" stroke-width="5.50" stroke-linecap="round"/>
+    <line x1="41.25" y1="107.25" x2="107.25" y2="107.25" stroke="#38bdf8" stroke-width="5.50" stroke-linecap="round"/>
+    <rect x="115.50" y="52.25" width="11.00" height="71.50" rx="5.50" fill="#ef4444"/>
+  </g>
+  <text x="320" y="196" font-family="Verdana, Arial, DejaVu Sans, sans-serif" font-size="76" font-weight="700" fill="#e6edf7">xSypher<tspan fill="#38bdf8">-Stream</tspan></text>
+  <text x="324" y="248" font-family="Verdana, Arial, DejaVu Sans, sans-serif" font-size="27" fill="#94a3b8">Zero-trust telemetry and inline enforcement for AI agent hosts</text>
+  <rect x="96" y="332" width="1088" height="1" fill="#1e293b"/>
+  <text x="96" y="392" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="19" fill="#38bdf8">execve  connect  openat  memfd_create  sched_process_exit</text>
+  <text x="96" y="426" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="19" fill="#94a3b8">bprm_check_security  ·  socket_connect  ·  file_open</text>
+  <text x="96" y="490" font-family="Verdana, Arial, DejaVu Sans, sans-serif" font-size="19" fill="#e6edf7">The decision is made in user space. The denial happens in the kernel.</text>
+  <text x="96" y="556" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="17" fill="#94a3b8">github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer</text>
+</svg>

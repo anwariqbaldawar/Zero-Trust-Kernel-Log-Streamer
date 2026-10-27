@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 128"
+     width="560" height="128" role="img"
+     aria-label="xSypher-Stream: a hexagon with three telemetry paths stopped by an enforcement bar">
+  <title>xSypher-Stream logo</title>
+  <desc>The mark is a kernel boundary with three telemetry paths entering it and a single bar, the LSM hook, stopping them.</desc>
+  <rect width="560" height="128" fill="#ffffff"/>
+  <g>
+    <path d="M 101.50 56.00 L 78.75 95.40 L 33.25 95.40 L 10.50 56.00 L 33.25 16.60 L 78.75 16.60 Z" fill="none" stroke="#0369a1" stroke-width="5.25" stroke-linejoin="round"/>
+    <line x1="26.25" y1="43.75" x2="68.25" y2="43.75" stroke="#0369a1" stroke-width="3.50" stroke-linecap="round"/>
+    <line x1="26.25" y1="56.00" x2="68.25" y2="56.00" stroke="#0369a1" stroke-width="3.50" stroke-linecap="round"/>
+    <line x1="26.25" y1="68.25" x2="68.25" y2="68.25" stroke="#0369a1" stroke-width="3.50" stroke-linecap="round"/>
+    <rect x="73.50" y="33.25" width="7.00" height="45.50" rx="3.50" fill="#b91c1c"/>
+  </g>
+  <text x="140" y="66" font-family="Verdana, Arial, DejaVu Sans, sans-serif" font-size="31" font-weight="700" fill="#0f172a">xSypher<tspan fill="#0369a1">-Stream</tspan></text>
+  <text x="141" y="95" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="13" fill="#64748b">eBPF telemetry, inline LSM enforcement</text>
+</svg>
