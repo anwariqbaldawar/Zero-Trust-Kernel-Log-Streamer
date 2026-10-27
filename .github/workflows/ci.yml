@@ -23,7 +23,7 @@ jobs:
     name: engine · ABI · simulation
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -61,21 +61,123 @@ jobs:
     name: kernel object · collector
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
+      # The runner image ships third-party apt sources (azure-cli, microsoft,
+      # google-chrome) that periodically return 403 or an expired key. That
+      # makes a bare `apt-get update` exit 100 and abort the whole job before a
+      # single package is installed. Update is therefore advisory: install
+      # failures are what decide the step, and each package is installed and
+      # diagnosed individually so a broken index names the package it hurt.
       - name: Install build toolchain
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
+          set -uo pipefail
+
+          apt_update() {
+            sudo apt-get update \
+              -o Acquire::Retries=3 \
+              -o Acquire::http::Timeout=30 \
+              -o Acquire::https::Timeout=30
+          }
+
+          install_one() {
+            local pkg="$1"
+            if dpkg -s "$pkg" >/dev/null 2>&1; then
+              echo "already present: $pkg"
+              return 0
+            fi
+            if sudo apt-get install -y --no-install-recommends \
+                 --fix-missing \
+                 -o Acquire::Retries=3 \
+                 -o Dpkg::Options::=--force-confnew \
+                 "$pkg" 2>&1 | tee -a /tmp/apt-install.log; then
+              echo "installed: $pkg"
+              return 0
+            fi
+            echo "::warning::apt-get could not install $pkg"
+            return 1
+          }
+
+          # Surface the real apt error in a check annotation: job logs are not
+          # always retrievable from the API, annotations always are.
+          announce_failure() {
+            local pkgs="$1"
+            if [ -s /tmp/apt-install.log ]; then
+              echo "::error title=apt could not install: ${pkgs}::$(tail -n 12 /tmp/apt-install.log | tr '\n' ' ')"
+            else
+              echo "::error title=apt could not install::${pkgs}"
+            fi
+          }
+
+          # universe carries bpftool and libbpf-dev; enable it explicitly so the
+          # job does not depend on the image already having it on.
+          sudo add-apt-repository -y universe >/dev/null 2>&1 || true
+
+          if ! apt_update 2>&1 | tee /tmp/apt-update.log; then
+            echo "::warning title=apt-get update reported errors::$(tail -n 8 /tmp/apt-update.log | tr '\n' ' ') continuing with cached indexes"
+          fi
+
+          failed=()
+          for pkg in clang llvm libelf-dev zlib1g-dev build-essential cmake pkg-config bpftool libbpf-dev; do
+            install_one "$pkg" || failed+=("$pkg")
+          done
+
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "retrying after a second apt-get update: ${failed[*]}"
+            apt_update || true
+            retry_failed=()
+            for pkg in "${failed[@]}"; do
+              install_one "$pkg" || retry_failed+=("$pkg")
+            done
+            if [ "${#retry_failed[@]}" -gt 0 ]; then
+              for pkg in "${retry_failed[@]}"; do
+                echo "--- apt-cache policy $pkg"
+                apt-cache policy "$pkg" || true
+                dpkg -s "$pkg" >/dev/null 2>&1 && echo "dpkg reports $pkg present" || true
+              done
+              announce_failure "${retry_failed[*]}"
+              exit 1
+            fi
+          fi
+
+          sudo ldconfig
+
+      # bpftool generates the skeleton, so it is required for `make all`. The
+      # distribution package is preferred; linux-tools-* is the fallback on
+      # images where the standalone package is not published yet.
+      - name: Ensure bpftool
+        shell: bash
+        run: |
+          set -uo pipefail
+          if command -v bpftool >/dev/null 2>&1; then
+            bpftool version
+            exit 0
+          fi
+          echo "bpftool not in PATH; trying linux-tools packages"
           sudo apt-get install -y --no-install-recommends \
-            clang llvm bpftool libbpf-dev libelf-dev zlib1g-dev \
-            build-essential cmake pkg-config
+            linux-tools-common "linux-tools-$(uname -r)" 2>&1 | tail -n 5 || true
+          if command -v bpftool >/dev/null 2>&1; then
+            bpftool version
+            exit 0
+          fi
+          found=$(find /usr/lib/linux-tools -maxdepth 2 -name bpftool -type f 2>/dev/null | head -n 1)
+          if [ -n "${found}" ]; then
+            sudo ln -sf "${found}" /usr/local/bin/bpftool
+            bpftool version
+            exit 0
+          fi
+          echo "::error title=bpftool unavailable::neither the bpftool package nor linux-tools-* provided it; the skeleton cannot be generated"
+          exit 1
 
       - name: Show toolchain versions
         run: |
           clang --version | head -1
           g++ --version | head -1
           bpftool version
-          pkg-config --modversion libbpf || true
+          pkg-config --modversion libbpf || echo "::warning::libbpf pkg-config entry unavailable"
 
       - name: Generate vmlinux.h (falls back to the documented stub)
         run: ./scripts/gen_vmlinux.sh include/vmlinux.h
@@ -119,7 +221,7 @@ jobs:
     name: rule documents in sync
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
