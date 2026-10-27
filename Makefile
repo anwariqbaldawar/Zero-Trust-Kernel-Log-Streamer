@@ -11,6 +11,8 @@
 #   make simulate   10k-event end-to-end MCP attack simulation
 #   make verify     full verification (build + tests + simulation)
 #   make check-docs check the documentation: figures, links, anchors, style
+#   make demo       re-capture the demo transcript and re-render assets/demo.gif
+#   make brand      regenerate logo, banner and social preview (add PNG=1)
 #   make run        run the collector (needs root + BPF-LSM for enforcement)
 #   make engine     run the Python engine in the foreground
 #   make clean      remove build artifacts
@@ -130,6 +132,15 @@ simulate:
 check-docs:
 	$(PYTHON) scripts/audit_svg.py docs/*.svg
 	$(PYTHON) scripts/check_docs.py
+
+# Reproducible demo assets. Both steps are real runs; nothing is staged.
+demo:
+	$(PYTHON) scripts/capture_demo.py
+	$(PYTHON) scripts/gen_demo_gif.py --columns 100
+
+# Brand assets. PNG rendering needs resvg-py or rsvg-convert; SVG always works.
+brand:
+	$(PYTHON) scripts/gen_brand_assets.py $(if $(PNG),--png,)
 
 verify:
 	./scripts/verify_and_benchmark.sh

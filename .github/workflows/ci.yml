@@ -283,6 +283,14 @@ jobs:
       - name: Links, anchors, image references, house style
         run: python scripts/check_docs.py
 
+      - name: Demo and brand assets can be regenerated
+        shell: bash
+        run: |
+          pip install --quiet pillow
+          python scripts/gen_demo_gif.py --columns 100
+          python scripts/gen_brand_assets.py
+          git diff --stat -- assets || true
+
   # --------------------------------------------------------------------- #
   # Determinism: the same rule document must behave identically for both   #
   # copies that ship (repository + Kubernetes ConfigMap).                 #
