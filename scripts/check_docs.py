@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS = ["README.md", "CONTRIBUTING.md", "SECURITY.md"]
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".pytest_cache"}
 ANCHOR_IGNORE = re.compile(r"^\s*(```|~~~)")
+# Assets consumed outside the Markdown: the social preview and banner are
+# uploaded in repository settings, so no document can reference them.
+EXTERNAL_ASSETS = {"social-preview.svg", "banner.svg"}
 
 
 def documents() -> list[Path]:
@@ -99,6 +102,40 @@ def check_images(path: Path, problems: list[str]) -> None:
             problems.append(f"{path.relative_to(ROOT)}: image not found: {target}")
 
 
+def check_picture(path: Path, problems: list[str]) -> None:
+    """<picture>/<img> markup in the hero: every srcset and src must exist."""
+    text = prose(path)
+    for match in re.finditer(r'srcset="([^"]+)"', text):
+        for candidate in match.group(1).split(","):
+            target = candidate.strip().split(" ")[0]
+            if target.startswith(("http://", "https://")):
+                continue
+            if not (path.parent / target).exists():
+                problems.append(f"{path.relative_to(ROOT)}: srcset target not found: {target}")
+    for match in re.finditer(r'<img[^>]*?\ssrc="([^"]+)"', text):
+        target = match.group(1)
+        if target.startswith(("http://", "https://")):
+            continue
+        if not (path.parent / target).exists():
+            problems.append(f"{path.relative_to(ROOT)}: img src not found: {target}")
+
+
+def check_mermaid(path: Path, problems: list[str]) -> None:
+    """Mermaid blocks must declare a diagram type GitHub renders."""
+    text = path.read_text(encoding="utf-8")
+    kinds = ("flowchart", "graph", "sequenceDiagram", "classDiagram", "stateDiagram",
+             "erDiagram", "journey", "gantt", "pie", "mindmap", "timeline")
+    for index, block in enumerate(re.findall(r"```mermaid\n(.*?)```", text, re.S), 1):
+        body = block.strip().splitlines()
+        if not body:
+            problems.append(f"{path.relative_to(ROOT)}: empty mermaid block {index}")
+            continue
+        if not body[0].strip().startswith(kinds):
+            problems.append(f"{path.relative_to(ROOT)}: mermaid block {index} has no diagram type")
+        if "\t" in block:
+            problems.append(f"{path.relative_to(ROOT)}: mermaid block {index} contains a tab")
+
+
 def check_style(path: Path, problems: list[str]) -> None:
     text = path.read_text(encoding="utf-8")
     if text.count("```") % 2:
@@ -115,11 +152,15 @@ def check_style(path: Path, problems: list[str]) -> None:
 def check_orphans(docs: list[Path], problems: list[str]) -> None:
     referenced: set[str] = set()
     for path in docs:
-        for match in re.finditer(r"!\[[^\]]*\]\(([^)\s]+)\)", prose(path)):
+        text = prose(path)
+        for match in re.finditer(r"!\[[^\]]*\]\(([^)\s]+)\)", text):
             referenced.add(Path(match.group(1)).name)
-    for svg in sorted((ROOT / "docs").glob("*.svg")):
-        if svg.name not in referenced:
-            problems.append(f"docs/{svg.name}: figured by no document")
+        for match in re.finditer(r'(?:srcset|\ssrc)="([^"]+)"', text):
+            for candidate in match.group(1).split(","):
+                referenced.add(Path(candidate.strip().split(" ")[0]).name)
+    for svg in sorted((ROOT / "docs").glob("*.svg")) + sorted((ROOT / "assets").glob("*.svg")):
+        if svg.name not in referenced and svg.name not in EXTERNAL_ASSETS:
+            problems.append(f"{svg.relative_to(ROOT)}: referenced by no document")
 
 
 def main() -> int:
@@ -129,6 +170,8 @@ def main() -> int:
     for path in docs:
         check_links(path, problems, cache)
         check_images(path, problems)
+        check_picture(path, problems)
+        check_mermaid(path, problems)
         check_style(path, problems)
     check_orphans(docs, problems)
 
@@ -136,7 +179,8 @@ def main() -> int:
         print("\n".join(problems))
         print(f"\n{len(problems)} problem(s)")
         return 1
-    print(f"ok   {len(docs)} documents: links, anchors, images, fences, style, figure references")
+    print(f"ok   {len(docs)} documents: links, anchors, images, fences, mermaid, style, "
+          f"figure references")
     return 0
 
 

@@ -1,0 +1,104 @@
+@@cmd
+PYTHONPATH=src python3 -m engine.main --simulate --enforce-kernel --quiet --simulate-count 120
+@@out
+[xsypher] WARNING: alert log /var/log/xsypher-alerts.jsonl is not writable; falling back to /tmp/xsypher-alerts.jsonl
+
+  [1m[35mxSypher-Stream[0m  [2mzero-trust kernel telemetry & inline LSM enforcement[0m
+  mode=[41m[1mINLINE_BLOCK[0m rules=6 kill=off collector=connected socket=(simulation)
+  metrics=http://0.0.0.0:9109/metrics   (Ctrl-C to stop)
+[2m  ------------------------------------------------------------------------------------[0m
+[36m  [..] simulation mode: no kernel, no collector socket[0m
+[32m  [ok] loaded 6 rules from /home/user/Zero-Trust-Kernel-Log-Streamer/config/rules.yaml; alert log /tmp/xsypher-a...
+[36m  [..] audit hash chain verified (8769 record(s))[0m
+[32m  [ok] prometheus exporter listening on 0.0.0.0:9109/metrics[0m
+
+  [31m[1m╔═ ALERT 0a61a421063b7b13 [0m[2m════════════════════[0m
+  [31m[1m║ CRITICAL MCP_SHELL_BREAKOUT[0m
+  ║ [1mMCP/AI agent spawned an interactive shell[0m
+  ║ [2mA process whose ancestry contains an AI runtime (node, python3, uvicorn, deno, bun, claude-mcp, ...) executed...
+  ║ subject : sh pid=1042 tgid=1042 uid=1000 container=26101d6e040e
+  ║ observed: /bin/sh -c curl http://169.254.169.254
+  ║ reason  : exe=sh container=26101d6e040e
+  ║ lineage : mcp-server -> python3 -> sh[1042]
+  ║ actions : quarantine_cgroup(12289)=ok
+  [2m╚════════════════════════════════════════[0m
+
+
+  [31m╔═ ALERT 7df573e7b180ec70 [0m[2m════════════════════[0m
+  [31m║ HIGH     MCP_RECON_OR_EXFIL_TOOL[0m
+  ║ [1mMCP/AI agent launched network or exfiltration tooling[0m
+  ║ [2mcurl, wget, nc, socat, nmap, ssh, scp or base64 was executed by a process with an AI/MCP ancestor.  This is e...
+  ║ subject : curl pid=1043 tgid=1043 uid=1000 container=26101d6e040e
+  ║ observed: /usr/bin/curl http://169.254.169.254/latest/meta-data/iam/
+  ║ reason  : exe=curl container=26101d6e040e
+  ║ lineage : mcp-server -> python3 -> sh -> curl[1043]
+  ║ actions : quarantine_pid(1043)=ok
+  [2m╚════════════════════════════════════════[0m
+
+
+  [31m[1m╔═ ALERT 29eabbd3d12366cd [0m[2m════════════════════[0m
+  [31m[1m║ CRITICAL CLOUD_IMDS_CREDENTIAL_THEFT[0m
+  ║ [1mCloud metadata service (IMDS) credential theft[0m
+  ║ [2mA containerised process connected to 169.254.169.254 (AWS/GCP/Azure/OCI instance metadata).  This is the stan...
+  ║ subject : curl pid=1043 tgid=1043 uid=1000 container=26101d6e040e
+  ║ network : 169.254.169.254:80
+  ║ reason  : exe=curl peer=169.254.169.254:80 container=26101d6e040e
+  ║ actions : block_ipv4(169.254.169.254)=ok
+  [2m╚════════════════════════════════════════[0m
+
+[36m  [..] simulation finished after 120 events[0m
+[36m  [..] stopping engine ...[0m
+[2m  [status] uptime_s=0.22  events_processed=120  events_per_sec=541.9  malformed_frames=0  alerts=3  commands_sent...
+@@cmd
+PYTHONPATH=src python3 tests/simulate_mcp_attack.py --events 10000
+@@out
+==============================================================================
+ xSypher-Stream :: end-to-end MCP attack simulation
+==============================================================================
+  workdir     : /tmp/xsypher-sim-2ida6wdb
+  socket      : /tmp/xsypher-sim-2ida6wdb/stream.sock
+  alert log   : /tmp/xsypher-sim-2ida6wdb/alerts.jsonl
+  metrics     : http://127.0.0.1:46711/metrics
+  rules       : /home/user/Zero-Trust-Kernel-Log-Streamer/config/rules.yaml
+  benign evts : 10000
+  chains      : 5 attack scenarios
+  engine      : connected
+
+  [1/3] streamed 10000 benign events in 0.27s (36,872 events/s)
+
+  [2/3] injecting attack chains
+        ok  chain A: MCP prompt injection -> interactive shell (2.2 ms)
+        ok  chain B: MCP recon tool + reverse shell port (2.2 ms)
+        ok  chain C: Cloud IMDS credential theft (2.1 ms)
+        ok  chain D: Host credential harvest (2.1 ms)
+        ok  chain E: Fileless payload staging via memfd (2.1 ms)
+
+  [3/3] verifying enforcement packets
+
+  rule engine benchmark (in-process replay of the same stream)
+        events           : 10,016
+        alerts           : 8
+        throughput       : 131,026 events/s
+        rule eval mean   : 5.96 us
+        rule eval p50    : 6.31 us
+        rule eval p95    : 13.00 us
+        rule eval p99    : 20.36 us
+        rule eval max    : 1064.64 us
+
+  results
+        events streamed  : 10,016 (34,932 events/s end-to-end)
+        engine processed : 10016.0
+        enforcement pkts : 8 (expected 8)
+          - quarantine_cgroup(cgroup=40961)
+          - quarantine_pid(pid=10203)
+          - block_ipv4(ip=203.0.113.9)
+          - quarantine_pid(pid=10302)
+          - quarantine_cgroup(cgroup=40963)
+          - block_ipv4(ip=169.254.169.254)
+          - quarantine_pid(pid=10402)
+          - quarantine_cgroup(cgroup=40965)
+        alerts by rule   : CLOUD_IMDS_CREDENTIAL_THEFT=1, FILELESS_MEMFD_EXECUTION=2, MCP_RECON_OR_EXFIL_TOOL=2, MCP_SHELL_BREAKOUT=1, SENSITIVE_CREDENTIAL_HARVEST=1, SUSPICIOUS_OUTBOUND_C2_PORT=1
+        audit chain      : verified (8 record(s))
+        mitigation latency: A=2.2ms, B=2.2ms, C=2.1ms, D=2.1ms, E=2.1ms
+
+RESULT: PASSED - all attack chains were detected and contained, every expected wire_policy_cmd_t was delivered.

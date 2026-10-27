@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320"
+     width="1280" height="320" role="img"
+     aria-label="xSypher-Stream banner: kernel-level zero-trust enforcement for AI agent hosts">
+  <title>xSypher-Stream banner</title>
+  <desc>A hexagon mark with telemetry paths stopped by an enforcement bar, the project name and a one line description of the tool chain.</desc>
+  <rect width="1280" height="320" fill="#0b1220"/>
+  <rect x="0" y="0" width="1280" height="4" fill="#38bdf8"/>
+  <g transform="translate(72 92)">
+    <path d="M 123.25 68.00 L 95.62 115.85 L 40.38 115.85 L 12.75 68.00 L 40.37 20.15 L 95.62 20.15 Z" fill="none" stroke="#38bdf8" stroke-width="6.38" stroke-linejoin="round"/>
+    <line x1="31.88" y1="53.12" x2="82.88" y2="53.12" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/>
+    <line x1="31.88" y1="68.00" x2="82.88" y2="68.00" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/>
+    <line x1="31.88" y1="82.88" x2="82.88" y2="82.88" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/>
+    <rect x="89.25" y="40.38" width="8.50" height="55.25" rx="4.25" fill="#ef4444"/>
+  </g>
+  <text x="248" y="150" font-family="Verdana, Arial, DejaVu Sans, sans-serif" font-size="56" font-weight="700" fill="#e6edf7">xSypher<tspan fill="#38bdf8">-Stream</tspan></text>
+  <text x="250" y="192" font-family="Verdana, Arial, DejaVu Sans, sans-serif" font-size="22" fill="#94a3b8">Kernel-level zero-trust enforcement for AI agent hosts</text>
+  <line x1="250" y1="216" x2="1208" y2="216" stroke="#1e293b" stroke-width="1"/>
+  <text x="250" y="248" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="15" fill="#94a3b8">eBPF CO-RE tracepoints  ->  16 MiB ring buffer  ->  C++20 collector  ->  Python engine  ->  BPF LSM deny</text>
+  <text x="250" y="278" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="15" fill="#38bdf8">5 tracepoints  ·  3 LSM hooks  ·  6 rules  ·  wire ABI v2  ·  640 / 720 / 32 bytes</text>
+</svg>
