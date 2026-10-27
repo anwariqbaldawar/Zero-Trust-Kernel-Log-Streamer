@@ -10,33 +10,34 @@
     </filter>
   </defs>
   <style>
-    .ink { fill:#0d1117; }
-    .red { fill:#c8102e; }
-    .glowHard { fill:#dc143c; opacity:.55; }
-    .glowSoft { fill:#dc143c; opacity:.35; }
+    .ink { fill:#000000; }
+    .red { fill:#dc143c; filter:drop-shadow(0 0 6px rgba(220, 20, 60, 0.45)); }
+    .glowHard { fill:#dc143c; opacity:.65; }
+    .glowSoft { fill:#dc143c; opacity:.40; }
     @media (prefers-color-scheme: dark) {
       .ink { fill:#ffffff; }
-      .red { fill:#ff2e4d; }
-      .glowHard { fill:#ff1744; opacity:.8; }
-      .glowSoft { fill:#ff1744; opacity:.5; }
+      .red { fill:#ff1744; filter:drop-shadow(0 0 10px rgba(255, 23, 68, 0.75)); }
+      .glowHard { fill:#ff1744; opacity:.90; }
+      .glowSoft { fill:#ff1744; opacity:.60; }
     }
     @keyframes pulseHard {
-      0%,100% { opacity:.35; }
-      50% { opacity:.85; }
+      0%,100% { opacity:.40; }
+      50% { opacity:.98; }
     }
     @keyframes pulseSoft {
-      0%,100% { opacity:.18; }
-      50% { opacity:.5; }
-    }
-    @keyframes tagGlow {
-      0%,100% { opacity:.25; }
+      0%,100% { opacity:.22; }
       50% { opacity:.65; }
     }
-    .animHard { animation:pulseHard 2.8s ease-in-out infinite; }
-    .animSoft { animation:pulseSoft 2.8s ease-in-out infinite; }
-    .animTag { animation:tagGlow 2.8s ease-in-out infinite; }
+    @keyframes tagGlow {
+      0%,100% { opacity:.30; }
+      50% { opacity:.85; }
+    }
+    .animHard { animation:pulseHard 2.4s ease-in-out infinite; }
+    .animSoft { animation:pulseSoft 2.4s ease-in-out infinite; }
+    .animTag { animation:tagGlow 2.4s ease-in-out infinite; }
     @media (prefers-reduced-motion: reduce) {
       .animHard,.animSoft,.animTag { animation:none; }
+      .red { filter:none; }
     }
   </style>
   <!-- crimson glow copies (behind the artwork) -->
