@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 660" width="1120" height="660" role="img" aria-label="Terminal window showing xSypher-Stream engine output: startup lines, a shell breakout alert block with lineage and the applied quarantine command, then an intercepted metadata-service connection and two LSM denial records">
+  <title>xSypher-Stream engine output</title>
+  <desc>Static capture of the engine terminal: banner, rule load, hash chain verification, one critical alert with its lineage and delivered policy command, and the LSM denials that follow.</desc>
+  <defs>
+    <style><![CDATA[
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .doc-title { font-size: 15px; font-weight: 600; }
+      .doc-sub { font-size: 11px; fill: #64748b; }
+      .chrome-title { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; fill: #64748b; }
+      .term { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.0px; }
+      .caption { font-size: 10px; fill: #64748b; }
+    ]]></style>
+  </defs>
+
+  <rect width="1120" height="644" fill="#ffffff"/>
+
+  <text class="doc-title" x="32" y="34">Threat engine, live terminal</text>
+  <text class="doc-sub" x="32" y="52">Line oriented on purpose: the same bytes go to a TTY or to a log shipper. Colour is suppressed when stdout is not a TTY or NO_COLOR is set.</text>
+
+  <rect x="32" y="70" width="1056" height="524" rx="7" fill="#0f172a"/>
+  <rect x="32" y="70" width="1056" height="34" rx="7" fill="#1e293b"/>
+  <rect x="32" y="97" width="1056" height="7" fill="#1e293b"/>
+  <circle cx="50" cy="87" r="4.5" fill="#f87171"/>
+  <circle cx="66" cy="87" r="4.5" fill="#fbbf24"/>
+  <circle cx="82" cy="87" r="4.5" fill="#4ade80"/>
+  <text class="chrome-title" x="100" y="90">xsypher-engine — enforcing — collector connected</text>
+  <text class="term" x="54" y="146.5"><tspan fill="#e879f9">  xSypher-Stream</tspan><tspan fill="#94a3b8">  zero-trust kernel telemetry &amp; inline LSM enforcement</tspan></text>
+  <text class="term" x="54" y="163.0"><tspan fill="#e2e8f0">  mode=</tspan><tspan fill="#f87171">INLINE_BLOCK</tspan><tspan fill="#e2e8f0"> rules=6 kill=off collector=connected socket=(simulation)</tspan></text>
+  <text class="term" x="54" y="179.5"><tspan fill="#e2e8f0">  metrics=http://0.0.0.0:9109/metrics   (Ctrl-C to stop)</tspan></text>
+  <text class="term" x="54" y="196.0"><tspan fill="#94a3b8">  ------------------------------------------------------------------------------------------------------------</tspan></text>
+  <text class="term" x="54" y="212.5"><tspan fill="#94a3b8">  [..] connecting to collector at /run/xsypher/stream.sock</tspan></text>
+  <text class="term" x="54" y="229.0"><tspan fill="#4ade80">  [ok] loaded 6 rules from /etc/xsypher/rules.yaml; alert log /var/log/xsypher/alerts.jsonl (chain seq=0)</tspan></text>
+  <text class="term" x="54" y="245.5"><tspan fill="#94a3b8">  [..] audit hash chain verified (0 record(s))</tspan></text>
+  <text class="term" x="54" y="262.0"><tspan fill="#4ade80">  [ok] prometheus exporter listening on 0.0.0.0:9109/metrics</tspan></text>
+  <text class="term" x="54" y="295.0"><tspan fill="#64748b">03:46:09.535 </tspan><tspan fill="#4ade80">EXEC </tspan><tspan fill="#e2e8f0">pid=1042    tgid=1042    cont=</tspan><tspan fill="#67e8f9">26101d6e040e</tspan><tspan fill="#cbd5e1"> sh               /bin/sh -c curl http://169.254.169.254</tspan><tspan fill="#f87171">  ! MCP_SHELL_BREAKOUT</tspan></text>
+  <text class="term" x="54" y="328.0"><tspan fill="#f87171">  ╔═ ALERT 58618c2fccebd1f6 </tspan><tspan fill="#94a3b8">════════════════════</tspan></text>
+  <text class="term" x="54" y="344.5"><tspan fill="#f87171">  ║ CRITICAL MCP_SHELL_BREAKOUT</tspan></text>
+  <text class="term" x="54" y="361.0"><tspan fill="#e2e8f0">  ║ MCP/AI agent spawned an interactive shell</tspan></text>
+  <text class="term" x="54" y="377.5"><tspan fill="#cbd5e1">  ║ subject : sh pid=1042 tgid=1042 uid=1000 container=26101d6e040e</tspan></text>
+  <text class="term" x="54" y="394.0"><tspan fill="#cbd5e1">  ║ observed: /bin/sh -c curl http://169.254.169.254</tspan></text>
+  <text class="term" x="54" y="410.5"><tspan fill="#cbd5e1">  ║ reason  : exe=sh container=26101d6e040e</tspan></text>
+  <text class="term" x="54" y="427.0"><tspan fill="#cbd5e1">  ║ lineage : mcp-server -&gt; python3 -&gt; sh[1042]</tspan></text>
+  <text class="term" x="54" y="443.5"><tspan fill="#cbd5e1">  ║ actions : quarantine_cgroup(12289)=</tspan><tspan fill="#4ade80">ok</tspan></text>
+  <text class="term" x="54" y="460.0"><tspan fill="#94a3b8">  ╚════════════════════════════════════════</tspan></text>
+  <text class="term" x="54" y="493.0"><tspan fill="#64748b">03:46:09.537 </tspan><tspan fill="#67e8f9">CONN </tspan><tspan fill="#e2e8f0">pid=1043    tgid=1043    cont=</tspan><tspan fill="#67e8f9">26101d6e040e</tspan><tspan fill="#cbd5e1"> curl             -&gt; 169.254.169.254:80 (af=2)</tspan><tspan fill="#f87171">  ! CLOUD_IMDS_CREDENTIAL_THEFT</tspan></text>
+  <text class="term" x="54" y="509.5"><tspan fill="#64748b">03:46:09.537 </tspan><tspan fill="#f87171">LSM! </tspan><tspan fill="#e2e8f0">pid=1043    tgid=1043    cont=</tspan><tspan fill="#67e8f9">26101d6e040e</tspan><tspan fill="#cbd5e1"> curl             DENIED 169.254.169.254:80 (ret=-1)</tspan></text>
+  <text class="term" x="54" y="526.0"><tspan fill="#64748b">03:46:09.537 </tspan><tspan fill="#f87171">LSM! </tspan><tspan fill="#e2e8f0">pid=1043    tgid=1043    cont=</tspan><tspan fill="#67e8f9">26101d6e040e</tspan><tspan fill="#cbd5e1"> curl             DENIED bprm_check_security (ret=-1)</tspan></text>
+  <text class="term" x="54" y="559.0"><tspan fill="#94a3b8">  ── 3 alerts, 2 denials, 0 drops, 11,482 events in 0.31 s ──</tspan></text>
+
+  <text class="caption" x="32" y="620">Captured from a simulation run: PYTHONPATH=src python3 -m engine.main --simulate --enforce-kernel</text>
+  <text class="caption" x="32" y="636">The alert block shows the resolved lineage and the policy command the collector applied to the kernel map. The two LSM! lines are the kernel denying what the quarantine now forbids.</text>
+</svg>

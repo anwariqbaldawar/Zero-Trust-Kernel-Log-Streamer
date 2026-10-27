@@ -265,6 +265,25 @@ jobs:
           retention-days: 7
 
   # --------------------------------------------------------------------- #
+  # Documentation: figures must be renderable and the prose must resolve.  #
+  # Static checks only, so this job needs nothing but python3.             #
+  # --------------------------------------------------------------------- #
+  docs:
+    name: docs · figures · links
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Figure geometry audit (text inside its box, inside the viewBox)
+        run: python scripts/audit_svg.py docs/*.svg
+
+      - name: Links, anchors, image references, house style
+        run: python scripts/check_docs.py
+
+  # --------------------------------------------------------------------- #
   # Determinism: the same rule document must behave identically for both   #
   # copies that ship (repository + Kubernetes ConfigMap).                 #
   # --------------------------------------------------------------------- #
