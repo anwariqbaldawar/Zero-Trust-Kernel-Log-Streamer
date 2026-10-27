@@ -164,14 +164,19 @@ jobs:
         run: |
           set -uo pipefail
 
+          # Emit the probe as annotations as well as log lines: workflow job
+          # logs live on blob storage that is not reachable from every client,
+          # while annotations are served by the API.
+          note() {
+            echo "--- $1"
+            echo "::warning title=bpftool probe::$1"
+          }
+
           probe() {
-            echo "--- PATH: $(command -v bpftool || echo none)"
-            echo "--- kernel: $(uname -r)"
-            echo "--- linux-tools packages installed:"
-            dpkg -l 'linux-tools*' 2>/dev/null | awk '/^ii/ {print "    " $2 " " $3}' || true
-            echo "--- /usr/lib/linux-tools tree:"
-            ls -1 /usr/lib/linux-tools 2>/dev/null | sed 's/^/    /' || echo "    (absent)"
-            find /usr/lib/linux-tools -maxdepth 2 -name bpftool 2>/dev/null | sed 's/^/    /' || true
+            note "path=$(command -v bpftool || echo none) kernel=$(uname -r)"
+            note "packages: $(dpkg -l 'linux-tools*' 2>/dev/null | awk '/^ii/ {printf "%s ", $2}')"
+            note "tree: $(ls -1 /usr/lib/linux-tools 2>/dev/null | tr '\n' ' ' || echo absent)"
+            note "binaries: $(find /usr/lib/linux-tools /usr/lib/linux-tools-common -maxdepth 3 -name bpftool 2>/dev/null | tr '\n' ' ')"
           }
 
           if bpftool version >/dev/null 2>&1; then
