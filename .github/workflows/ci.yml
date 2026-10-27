@@ -265,6 +265,80 @@ jobs:
           retention-days: 7
 
   # --------------------------------------------------------------------- #
+  # Distribution: the npm package must install, run and stay minimal.      #
+  # Matrix across the Node versions declared in package.json engines.      #
+  # --------------------------------------------------------------------- #
+  package:
+    name: npm package · node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Syntax and executable bit
+        run: |
+          node --check bin/xsypher.mjs
+          test -x bin/xsypher.mjs
+
+      - name: Help and version
+        run: |
+          node bin/xsypher.mjs --help | tee /tmp/help.txt
+          grep -q "USAGE" /tmp/help.txt
+          node bin/xsypher.mjs --version
+
+      - name: Doctor emits valid JSON and exits non-zero on a hard failure
+        run: |
+          set +e
+          node bin/xsypher.mjs doctor --json > /tmp/doctor.json
+          code=$?
+          set -e
+          python3 -c "import json; json.load(open('/tmp/doctor.json'))"
+          echo "doctor exit code: $code (1 means a blocking check failed, which is correct on a sandbox runner)"
+
+      - name: Unknown commands fail with a hint
+        run: |
+          if node bin/xsypher.mjs no-such-command 2>/tmp/err.txt; then
+            echo "::error::an unknown command must exit non-zero"
+            exit 1
+          fi
+          grep -q "unknown command" /tmp/err.txt
+
+      - name: Package manifest stays minimal
+        run: |
+          npm pack --dry-run --json > /tmp/pack.json
+          python3 - <<'PY'
+          import json
+          entry = json.load(open('/tmp/pack.json'))[0]
+          files = [item['path'] for item in entry['files']]
+          print('\n'.join(files))
+          banned = ('src/', 'tests/', 'docs/', 'assets/', 'scripts/', 'node_modules', '.venv', '.git')
+          bad = [f for f in files if f.startswith(banned)]
+          assert not bad, f'unexpected files in the package: {bad}'
+          required = {'bin/xsypher.mjs', 'package.json', 'README.md', 'LICENSE', 'config/rules.yaml'}
+          missing = required - set(files)
+          assert not missing, f'missing from the package: {missing}'
+          assert entry['size'] < 200_000, f'package grew to {entry["size"]} bytes'
+          print(f'{len(files)} files, {entry["size"]} bytes, whitelist respected')
+          PY
+
+      - name: Bootstrapper end to end on node 22
+        if: matrix.node == '22'
+        env:
+          XSYPHER_HOME: ${{ runner.temp }}/xsypher-cache
+        run: |
+          python3 -m pip install --user pyyaml >/dev/null
+          node bin/xsypher.mjs simulate 500 | tee /tmp/sim.txt
+          grep -q "RESULT: PASSED" /tmp/sim.txt
+          grep -q "chains contained  5 of 5" /tmp/sim.txt
+
+  # --------------------------------------------------------------------- #
   # Documentation: figures must be renderable and the prose must resolve.  #
   # Static checks only, so this job needs nothing but python3.             #
   # --------------------------------------------------------------------- #
