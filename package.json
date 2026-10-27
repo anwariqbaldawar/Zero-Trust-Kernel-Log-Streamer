@@ -1,0 +1,52 @@
+{
+  "name": "xsypher-stream",
+  "version": "2.0.0",
+  "description": "Kernel-verified runtime defence for AI agent hosts: eBPF telemetry and inline LSM denial for MCP workloads.",
+  "keywords": [
+    "ebpf",
+    "bpf-lsm",
+    "runtime-security",
+    "zero-trust",
+    "mcp",
+    "ai-security",
+    "container-security",
+    "threat-detection",
+    "observability",
+    "linux"
+  ],
+  "license": "Apache-2.0",
+  "author": "anwariqbaldawar",
+  "homepage": "https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer/issues"
+  },
+  "bin": {
+    "xsypher": "./bin/xsypher.mjs",
+    "xsypher-stream": "./bin/xsypher.mjs"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE",
+    "config/rules.yaml",
+    "deploy/"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "check": "node --check bin/xsypher.mjs",
+    "pack:check": "npm pack --dry-run"
+  }
+}

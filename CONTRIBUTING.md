@@ -44,6 +44,8 @@ PYTHONPATH=src python3 tests/simulate_mcp_attack.py --events 2000
 | `config/rules.yaml` | YAML | detection content; most contributions land here |
 | `tests/` | Python | unit + end-to-end proof |
 | `deploy/`, `scripts/` | YAML/sh/Python | packaging, verification and asset generators |
+| `bin/xsypher.mjs` | Node ESM | zero-dependency bootstrapper published as the npm package |
+| `package.json` | JSON | npm manifest: bin mapping, file whitelist, engines |
 | `docs/` | Markdown/SVG | reference documents and hand-written figures |
 | `assets/` | SVG/GIF | logo, banner, social preview, demo GIF |
 
