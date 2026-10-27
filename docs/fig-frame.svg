@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 520" width="1120" height="520" role="img" aria-label="Byte layout of the three wire structures: the 720-byte telemetry frame with its 80-byte header and 640-byte kernel event, a zoom of the header fields, and the 32-byte policy command">
+  <title>Wire structure byte layout</title>
+  <desc>Proportional band diagrams: the 720-byte wire_event_msg_t split into an 80-byte header and an embedded 640-byte kernel_event_t; the header zoomed to show magic, version, message type, sequence number and container identifier; and the 32-byte wire_policy_cmd_t with its target fields.</desc>
+  <defs>
+    <style><![CDATA[
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .doc-title { font-size: 15px; font-weight: 600; }
+      .doc-sub { font-size: 11px; fill: #64748b; }
+      .section { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; fill: #64748b; }
+      .field { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; fill: #0f172a; }
+      .bytes { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9px; fill: #94a3b8; }
+      .offset { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9px; fill: #94a3b8; }
+      .inside-mini { font-size: 9.5px; font-weight: 600; fill: #1e3a8a; }
+      .inside { font-size: 10px; font-weight: 600; fill: #1e3a8a; }
+      .inside-sub { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9.5px; fill: #1e40af; }
+      .inside-amber { font-size: 10px; font-weight: 600; fill: #92400e; }
+      .footnote { font-size: 10.5px; fill: #64748b; }
+    ]]></style>
+  </defs>
+
+  <rect width="1120" height="520" fill="#ffffff"/>
+
+  <text class="doc-title" x="32" y="34">Wire structure byte layout</text>
+  <text class="doc-sub" x="32" y="52">Band width is proportional to field size. Little-endian; every structure is packed and aligned to 8 bytes.</text>
+
+  <text class="section" x="32" y="86">TELEMETRY FRAME &#183; struct wire_event_msg_t &#183; 720 B &#183; collector to engine</text>
+  <rect x="60" y="98" width="111.1" height="46" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/>
+  <rect x="171.1" y="98" width="888.9" height="46" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="inside" x="115.6" y="120" text-anchor="middle">header</text>
+  <text class="inside-sub" x="115.6" y="134" text-anchor="middle">80 B</text>
+  <text class="inside" x="615.6" y="120" text-anchor="middle">event &#183; struct kernel_event_t &#183; 640 B &#183; copied byte for byte from the ring buffer record</text>
+  <text class="inside-sub" x="615.6" y="134" text-anchor="middle">identity and lineage &#183; per-event fields &#183; comm &#183; filename &#183; argv</text>
+
+  <text class="section" x="32" y="180">HEADER ZOOM &#183; bytes 0 to 79 &#183; 12.5 px per byte</text>
+  <rect x="60.0" y="208" width="50.0" height="44" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/>
+  <text class="offset" x="60.0" y="201" text-anchor="start">0</text>
+  <line x1="85.0" y1="252" x2="85.0" y2="273" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="bytes" x="85.0" y="284" text-anchor="middle">0x58535950</text>
+  <rect x="110.0" y="208" width="25.0" height="44" fill="#e0e7ff" stroke="#93c5fd" stroke-width="0.8"/>
+  <text class="offset" x="110.0" y="201" text-anchor="start">4</text>
+  <line x1="122.5" y1="252" x2="122.5" y2="291" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="bytes" x="122.5" y="284" text-anchor="middle">v2</text>
+  <rect x="135.0" y="208" width="25.0" height="44" fill="#e0e7ff" stroke="#93c5fd" stroke-width="0.8"/>
+  <text class="offset" x="135.0" y="201" text-anchor="start">6</text>
+  <line x1="147.5" y1="252" x2="147.5" y2="273" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="bytes" x="147.5" y="284" text-anchor="middle">1</text>
+  <rect x="160.0" y="208" width="100.0" height="44" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/>
+  <text class="offset" x="160.0" y="201" text-anchor="start">8</text>
+  <line x1="210.0" y1="252" x2="210.0" y2="291" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="bytes" x="210.0" y="284" text-anchor="middle">monotonic</text>
+  <rect x="260.0" y="208" width="800.0" height="44" fill="#bfdbfe" stroke="#93c5fd" stroke-width="0.8"/>
+  <text class="offset" x="260.0" y="201" text-anchor="start">16</text>
+
+  <text class="inside-mini" transform="rotate(-90 85.0 230)" x="88.5" y="230" text-anchor="middle">magic</text>
+  <text class="inside-mini" transform="rotate(-90 122.5 230)" x="126.0" y="230" text-anchor="middle">ver</text>
+  <text class="inside-mini" transform="rotate(-90 147.5 230)" x="151.0" y="230" text-anchor="middle">type</text>
+  <text class="inside-mini" transform="rotate(-90 210.0 230)" x="213.5" y="230" text-anchor="middle">seq_no</text>
+  <text class="inside" x="660" y="228" text-anchor="middle">container_id</text>
+  <text class="inside-sub" x="660" y="242" text-anchor="middle">64 B, not NUL terminated at full length</text>
+  <text class="section" x="32" y="320">POLICY COMMAND &#183; struct wire_policy_cmd_t &#183; 32 B &#183; engine to collector &#183; 31.25 px per byte</text>
+  <rect x="60.0" y="348" width="125.0" height="44" fill="#fef3c7" stroke="#fcd34d" stroke-width="0.8"/>
+  <text class="offset" x="60.0" y="341" text-anchor="start">0</text>
+  <line x1="122.5" y1="392" x2="122.5" y2="413" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="field" x="122.5" y="422" text-anchor="middle">magic</text>
+  <text class="bytes" x="122.5" y="434" text-anchor="middle">0x58535950</text>
+  <rect x="185.0" y="348" width="62.5" height="44" fill="#fef9c3" stroke="#fcd34d" stroke-width="0.8"/>
+  <text class="offset" x="185.0" y="341" text-anchor="start">4</text>
+  <line x1="216.2" y1="392" x2="216.2" y2="413" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="field" x="216.2" y="422" text-anchor="middle">ver</text>
+  <text class="bytes" x="216.2" y="434" text-anchor="middle">v2</text>
+  <rect x="247.5" y="348" width="62.5" height="44" fill="#fef9c3" stroke="#fcd34d" stroke-width="0.8"/>
+  <text class="offset" x="247.5" y="341" text-anchor="start">6</text>
+  <line x1="278.8" y1="392" x2="278.8" y2="413" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="field" x="278.8" y="422" text-anchor="middle">cmd</text>
+  <text class="bytes" x="278.8" y="434" text-anchor="middle">10..16</text>
+  <rect x="310.0" y="348" width="250.0" height="44" fill="#fde68a" stroke="#fcd34d" stroke-width="0.8"/>
+  <text class="offset" x="310.0" y="341" text-anchor="start">8</text>
+  <line x1="435.0" y1="392" x2="435.0" y2="413" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="field" x="435.0" y="422" text-anchor="middle">target_cgroup_id</text>
+  <text class="bytes" x="435.0" y="434" text-anchor="middle">u64</text>
+  <rect x="560.0" y="348" width="125.0" height="44" fill="#fef3c7" stroke="#fcd34d" stroke-width="0.8"/>
+  <text class="offset" x="560.0" y="341" text-anchor="start">16</text>
+  <line x1="622.5" y1="392" x2="622.5" y2="413" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="field" x="622.5" y="422" text-anchor="middle">target_pid</text>
+  <text class="bytes" x="622.5" y="434" text-anchor="middle">u32</text>
+  <rect x="685.0" y="348" width="125.0" height="44" fill="#fef3c7" stroke="#fcd34d" stroke-width="0.8"/>
+  <text class="offset" x="685.0" y="341" text-anchor="start">20</text>
+  <line x1="747.5" y1="392" x2="747.5" y2="413" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="field" x="747.5" y="422" text-anchor="middle">target_ipv4</text>
+  <text class="bytes" x="747.5" y="434" text-anchor="middle">raw</text>
+  <rect x="810.0" y="348" width="125.0" height="44" fill="#fef3c7" stroke="#fcd34d" stroke-width="0.8"/>
+  <text class="offset" x="810.0" y="341" text-anchor="start">24</text>
+  <line x1="872.5" y1="392" x2="872.5" y2="413" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="field" x="872.5" y="422" text-anchor="middle">mode</text>
+  <text class="bytes" x="872.5" y="434" text-anchor="middle">0 or 1</text>
+  <rect x="935.0" y="348" width="125.0" height="44" fill="#f8fafc" stroke="#fcd34d" stroke-width="0.8"/>
+  <text class="offset" x="935.0" y="341" text-anchor="start">28</text>
+  <line x1="997.5" y1="392" x2="997.5" y2="413" stroke="#cbd5e1" stroke-width="0.8"/>
+  <text class="field" x="997.5" y="422" text-anchor="middle">rsv</text>
+  <text class="bytes" x="997.5" y="434" text-anchor="middle">0</text>
+
+  <text class="footnote" x="32" y="470">A datagram is exactly one structure: 720 bytes inbound, 32 bytes outbound. A frame of any other length is a protocol error and is counted, not parsed.</text>
+  <text class="footnote" x="32" y="486">Both sides validate magic and version on every message and reject a mismatch with a logged reason, so a partial rollout fails at the first frame instead of misreading a layout.</text>
+</svg>

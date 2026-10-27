@@ -57,6 +57,10 @@ mode`. `drops` is the kernel side ring buffer drop counter; when it rises the co
 
 ## Metrics
 
+![Metrics view: headline counters, the latency histogram and the enforcement panel](fig-metrics.svg)
+
+*The denial counter and the failed-command counter together separate a sensor that is watching from one that is enforcing.*
+
 Prometheus text format at `:9109/metrics`.
 
 | Series | Type | Interpretation |
@@ -249,6 +253,10 @@ so stopping the collector detaches all programs and frees the maps.
 ---
 
 ## Troubleshooting
+
+![Engine terminal showing an alert block and the resulting denials](fig-terminal.svg)
+
+*What an operator sees: the alert, its resolved lineage, the delivered command, then the denials.*
 
 | Symptom | Cause | Resolution |
 |---|---|---|

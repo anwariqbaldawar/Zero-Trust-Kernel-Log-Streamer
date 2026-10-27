@@ -4,6 +4,10 @@ The binary contract between the kernel object, the collector and the engine. `in
 normative; `src/engine/abi.py` mirrors it with `ctypes` and asserts every size and offset at import; a
 test compiles the header with the host C compiler and compares both representations.
 
+![Byte layout of the three wire structures](fig-frame.svg)
+
+*Band width is proportional to field size.*
+
 Three structures, all `packed, aligned(8)`, all integers little-endian:
 
 | Structure | Size | Direction | Transport |
