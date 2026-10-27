@@ -121,9 +121,18 @@ jobs:
           fi
 
           failed=()
-          for pkg in clang llvm libelf-dev zlib1g-dev build-essential cmake pkg-config bpftool libbpf-dev; do
+          for pkg in clang llvm libelf-dev zlib1g-dev build-essential cmake pkg-config libbpf-dev; do
             install_one "$pkg" || failed+=("$pkg")
           done
+
+          # bpftool is a virtual package on this image ("no installation
+          # candidate"), provided by linux-tools-common. Install the provider
+          # directly; the "Ensure bpftool" step locates the real binary under
+          # /usr/lib/linux-tools and puts it on PATH.
+          for pkg in linux-tools-common "linux-tools-$(uname -r)" linux-tools-generic; do
+            install_one "$pkg" || echo "::warning::optional package unavailable: $pkg"
+          done
+          install_one bpftool || echo "::warning::virtual package bpftool has no candidate; relying on linux-tools-common"
 
           if [ "${#failed[@]}" -gt 0 ]; then
             echo "retrying after a second apt-get update: ${failed[*]}"
@@ -152,24 +161,42 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          if command -v bpftool >/dev/null 2>&1; then
+          # A working bpftool answers --version. On this image the binary usually
+          # arrives as /usr/lib/linux-tools/<kernel>/bpftool and the PATH entry
+          # is a dispatcher that fails when that kernel does not match, so test
+          # the command and not just its presence.
+          if bpftool version >/dev/null 2>&1; then
             bpftool version
             exit 0
           fi
-          echo "bpftool not in PATH; trying linux-tools packages"
-          sudo apt-get install -y --no-install-recommends \
-            linux-tools-common "linux-tools-$(uname -r)" 2>&1 | tail -n 5 || true
-          if command -v bpftool >/dev/null 2>&1; then
-            bpftool version
-            exit 0
+
+          found=$(find /usr/lib/linux-tools /usr/lib/linux-tools-common -maxdepth 2 \
+                    -name bpftool -type f 2>/dev/null | head -n 1)
+          if [ -n "${found}" ]; then
+            echo "using ${found}"
+            sudo ln -sf "${found}" /usr/local/bin/bpftool
+            if bpftool version; then
+              exit 0
+            fi
           fi
-          found=$(find /usr/lib/linux-tools -maxdepth 2 -name bpftool -type f 2>/dev/null | head -n 1)
+
+          # Last resort: build bpftool from the libbpf tree the job already needs
+          # for headers. This keeps the authoritative build unblocked when the
+          # distribution package layout changes again.
+          if [ ! -d /tmp/libbpf ]; then
+            git clone --depth 1 --branch v1.4.2 https://github.com/libbpf/libbpf.git /tmp/libbpf
+          fi
+          if make -C /tmp/libbpf/src -j"$(nproc)" >/dev/null 2>&1 && \
+             make -C /tmp/libbpf/src install >/dev/null 2>&1; then
+            sudo ldconfig
+          fi
+          found=$(find /tmp/libbpf /usr -maxdepth 6 -name bpftool -type f -perm -u+x 2>/dev/null | head -n 1)
           if [ -n "${found}" ]; then
             sudo ln -sf "${found}" /usr/local/bin/bpftool
-            bpftool version
-            exit 0
+            bpftool version && exit 0
           fi
-          echo "::error title=bpftool unavailable::neither the bpftool package nor linux-tools-* provided it; the skeleton cannot be generated"
+
+          echo "::error title=bpftool unavailable::no bpftool binary found in PATH, /usr/lib/linux-tools or the libbpf tree; the skeleton cannot be generated"
           exit 1
 
       - name: Show toolchain versions
