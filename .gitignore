@@ -28,3 +28,10 @@ xsypher-stream.sock
 .idea/
 .vscode/
 *.swp
+
+# Node / npm
+node_modules/
+*.tgz
+.npm/
+.coverage
+htmlcov/
