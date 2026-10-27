@@ -189,10 +189,31 @@ jobs:
             /usr/sbin/bpftool /usr/bin/bpftool; do
             [ -x "${candidate}" ] || continue
             echo "trying ${candidate}"
+            note "${candidate} => $(sudo "${candidate}" version 2>&1 | head -n 1)"
             if sudo ln -sf "${candidate}" /usr/local/bin/bpftool 2>/dev/null && bpftool version; then
               exit 0
             fi
           done
+
+          # The distribution packages are unreliable here: on the current runner
+          # image /usr/sbin/bpftool is a dispatcher, the kernel-matched
+          # linux-tools package ships no bpftool binary, and the generic one is
+          # built against a different libbpf. Build bpftool from its upstream
+          # mirror instead; it vendors libbpf as a submodule and needs only
+          # clang, libelf and zlib, all of which the previous step installed.
+          note "building bpftool from source"
+          rm -rf /tmp/bpftool-src
+          if git clone --depth 1 https://github.com/libbpf/bpftool.git /tmp/bpftool-src \
+             && git -C /tmp/bpftool-src submodule update --init --depth 1 libbpf; then
+            if make -C /tmp/bpftool-src/src -j"$(nproc)" 2>&1 | tail -n 15; then
+              if [ -x /tmp/bpftool-src/src/bpftool ]; then
+                sudo install -m 0755 /tmp/bpftool-src/src/bpftool /usr/local/bin/bpftool
+                if bpftool version; then
+                  exit 0
+                fi
+              fi
+            fi
+          fi
 
           probe
           echo "::error title=bpftool unavailable::no working bpftool binary; see the probe output in the step log. The skeleton cannot be generated without it."
