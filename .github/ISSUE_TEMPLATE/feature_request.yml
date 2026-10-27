@@ -1,0 +1,47 @@
+name: Feature request
+description: A rule, a hook or an operator feature you need
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The attacker behaviour or operator problem
+      description: Describe what happens on the host today, not the code change you have in mind.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - a new detection rule
+        - a new kernel hook or event field
+        - collector behaviour
+        - engine behaviour or metrics
+        - deployment and packaging
+        - documentation
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence it is real
+      description: >
+        A syscall trace, a kernel version where the behaviour exists, or a public write-up. A rule without a
+        reproduction will be asked for one, because a rule that never fires is worse than no rule.
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: cost
+    attributes:
+      label: Cost
+      description: Events per second this would add, and whether it needs a new map or a wire ABI change.
+  - type: checkboxes
+    id: limits
+    attributes:
+      label: Constraints
+      options:
+        - label: This keeps the engine dependency list to PyYAML.
+        - label: I have read the "Limits and non-goals" section of the README.
+          required: true

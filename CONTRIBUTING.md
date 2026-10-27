@@ -43,7 +43,22 @@ PYTHONPATH=src python3 tests/simulate_mcp_attack.py --events 2000
 | `src/engine/` | Python 3.12 | decode, lineage, rules, mitigation, metrics, TUI |
 | `config/rules.yaml` | YAML | detection content; most contributions land here |
 | `tests/` | Python | unit + end-to-end proof |
-| `deploy/`, `scripts/` | YAML/sh | packaging and verification |
+| `deploy/`, `scripts/` | YAML/sh/Python | packaging, verification and asset generators |
+| `docs/` | Markdown/SVG | reference documents and hand-written figures |
+| `assets/` | SVG/GIF | logo, banner, social preview, demo GIF |
+
+### Generated assets
+
+Three scripts own everything visual, and each is committed next to its output, so no asset is hand-edited:
+
+| Command | Writes | Needs |
+|---|---|---|
+| `make demo` | `assets/demo-session.txt`, `assets/demo.gif` | python3, PyYAML, Pillow |
+| `make brand` | `assets/logo-*.svg`, `assets/banner.svg`, `assets/social-preview.svg` | python3 (add `PNG=1` for PNG siblings, needs resvg-py or rsvg-convert) |
+| `make check-docs` | nothing; verifies figures, links, anchors and style | python3 |
+
+`make demo` is two real runs captured through a pseudo terminal, so the GIF shows bytes the program actually
+wrote. Never edit the GIF or the transcript by hand.
 
 ---
 
