@@ -46,7 +46,7 @@
   <rect x="32" y="88" width="324" height="304" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
   <text class="panel-label" x="50" y="112">KERNEL</text>
   <text class="panel-title" x="50" y="130">eBPF CO-RE</text>
-  <text class="panel-file" x="132" y="130">src/bpf/xsypher.bpf.c</text>
+  <text class="panel-file" x="326" y="112" text-anchor="end">src/bpf/xsypher.bpf.c</text>
 
   <rect x="50" y="142" width="288" height="94" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
   <text class="box-title" x="62" y="160">Tracepoints</text>
@@ -70,7 +70,7 @@
   <rect x="396" y="88" width="324" height="304" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
   <text class="panel-label" x="414" y="112">USER SPACE</text>
   <text class="panel-title" x="414" y="130">libbpf collector</text>
-  <text class="panel-file" x="510" y="130">src/collector (C++20)</text>
+  <text class="panel-file" x="690" y="112" text-anchor="end">src/collector (C++20)</text>
 
   <rect x="414" y="142" width="288" height="52" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
   <text class="box-title" x="426" y="160">ring_buffer__poll()</text>
@@ -92,7 +92,7 @@
   <rect x="760" y="88" width="328" height="304" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
   <text class="panel-label" x="778" y="112">POLICY</text>
   <text class="panel-title" x="778" y="130">Engine</text>
-  <text class="panel-file" x="838" y="130">src/engine (Python 3.12)</text>
+  <text class="panel-file" x="1058" y="112" text-anchor="end">src/engine (Python 3.12)</text>
 
   <rect x="778" y="142" width="292" height="52" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
   <text class="box-title" x="790" y="160">Frame decoder</text>
@@ -129,5 +129,5 @@
 
   <!-- footnote -->
   <line x1="32" y1="408" x2="1088" y2="408" stroke="#e2e8f0" stroke-width="1"/>
-  <text class="footnote" x="32" y="426">Wire format: little-endian, magic 0x58535950, ABI v2. Telemetry frame: struct wire_event_msg_t (720 B). Policy frame: struct wire_policy_cmd_t (32 B). Ring buffer: BPF_MAP_TYPE_RINGBUF, 16 MiB.</text>
+  <text class="footnote" x="32" y="426">Wire format: little-endian, magic 0x58535950, ABI v2. Frame: wire_event_msg_t (720 B). Command: wire_policy_cmd_t (32 B). Ring buffer: RINGBUF, 16 MiB.</text>
 </svg>

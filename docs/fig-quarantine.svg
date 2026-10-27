@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 580" width="1120" height="580" role="img" aria-label="Quarantine state machine: normal, alerted, quarantined and released, with the three LSM hooks that deny while a domain is quarantined and the audit-only bypass">
+  <title>Quarantine state machine</title>
+  <desc>A domain moves from normal to alerted on a rule match, to quarantined when the engine sends a policy command that the collector writes into a BPF map, and back to released on shutdown. While quarantined, three LSM hooks deny execution, blocked connections and write-like opens.</desc>
+  <defs>
+    <marker id="qs-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="qs-arrow-dash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="qs-arrow-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b91c1c"/>
+    </marker>
+    <style><![CDATA[
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .doc-title { font-size: 15px; font-weight: 600; }
+      .doc-sub { font-size: 11px; fill: #64748b; }
+      .state-index { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; fill: #94a3b8; }
+      .state-name { font-size: 12.5px; font-weight: 600; }
+      .state-body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; fill: #475569; }
+      .edge { font-size: 10px; fill: #475569; }
+      .edge-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9.5px; fill: #475569; }
+      .panel-title { font-size: 10px; font-weight: 700; letter-spacing: 1.3px; fill: #64748b; }
+      .hook { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; fill: #0f172a; }
+      .hook-note { font-size: 10px; fill: #64748b; }
+      .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9.5px; fill: #b91c1c; font-weight: 700; }
+      .audit-body { font-size: 10.5px; fill: #475569; }
+      .footnote { font-size: 10.5px; fill: #64748b; }
+    ]]></style>
+  </defs>
+
+  <rect width="1120" height="580" fill="#ffffff"/>
+
+  <text class="doc-title" x="32" y="34">Quarantine state machine</text>
+  <text class="doc-sub" x="32" y="52">Policy state lives in BPF maps, not in the engine. A crashed engine leaves installed state in force; a clean shutdown releases it.</text>
+
+  <!-- ===== states ===== -->
+  <!-- 1 normal -->
+  <rect x="40" y="126" width="200" height="104" rx="5" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="state-index" x="56" y="148">STATE 01</text>
+  <text class="state-name" x="56" y="168">Normal</text>
+  <text class="state-body" x="56" y="190">not present in any map</text>
+  <text class="state-body" x="56" y="204">all hooks return 0</text>
+  <text class="state-body" x="56" y="218">telemetry only</text>
+
+  <!-- 2 alerted -->
+  <rect x="300" y="126" width="200" height="104" rx="5" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="state-index" x="316" y="148">STATE 02</text>
+  <text class="state-name" x="316" y="168">Alerted</text>
+  <text class="state-body" x="316" y="190">rule matched, record</text>
+  <text class="state-body" x="316" y="204">hash-chained and appended</text>
+  <text class="state-body" x="316" y="218">cooldown 5 s per rule</text>
+
+  <!-- 3 quarantined -->
+  <rect x="560" y="126" width="200" height="104" rx="5" fill="#fff5f5" stroke="#fca5a5"/>
+  <text class="state-index" x="576" y="148">STATE 03</text>
+  <text class="state-name" x="576" y="168">Quarantined</text>
+  <text class="state-body" x="576" y="190">cgroup or pid in map</text>
+  <text class="state-body" x="576" y="204">value = QUARANTINE_BLOCK</text>
+  <text class="state-body" x="576" y="218">mode = INLINE_BLOCK</text>
+
+  <!-- 4 released -->
+  <rect x="840" y="126" width="200" height="104" rx="5" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="state-index" x="856" y="148">STATE 04</text>
+  <text class="state-name" x="856" y="168">Released</text>
+  <text class="state-body" x="856" y="190">UNQUARANTINE_* sent</text>
+  <text class="state-body" x="856" y="204">on graceful shutdown</text>
+  <text class="state-body" x="856" y="218">maps empty again</text>
+
+  <!-- transitions -->
+  <line x1="240" y1="178" x2="296" y2="178" stroke="#475569" stroke-width="1.4" marker-end="url(#qs-arrow)"/>
+  <text class="edge" x="268" y="118" text-anchor="middle">rule match</text>
+  <line x1="500" y1="178" x2="556" y2="178" stroke="#475569" stroke-width="1.4" marker-end="url(#qs-arrow)"/>
+  <text class="edge-mono" x="528" y="118" text-anchor="middle">CMD_QUARANTINE</text>
+  <line x1="760" y1="178" x2="836" y2="178" stroke="#475569" stroke-width="1.4" marker-end="url(#qs-arrow)"/>
+  <text class="edge-mono" x="798" y="104" text-anchor="middle">UNQUARANTINE_*</text>
+  <text class="edge" x="798" y="118" text-anchor="middle">on shutdown or exit</text>
+
+  <!-- self-loop on quarantine: pid cleanup -->
+  <path d="M 640 230 L 640 256 L 700 256 L 700 232" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#qs-arrow-dash)"/>
+  <text class="edge-mono" x="712" y="259">sched_process_exit deletes the pid entry</text>
+
+  <!-- ===== left panel: audit only ===== -->
+  <rect x="40" y="300" width="440" height="204" rx="5" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text class="panel-title" x="58" y="324">AUDIT-ONLY PATH</text>
+  <text class="audit-body" x="58" y="348">config_map[0] = 0 makes every LSM hook return 0, so</text>
+  <text class="audit-body" x="58" y="364">nothing is denied. Detection, metrics and the audit</text>
+  <text class="audit-body" x="58" y="380">chain behave exactly as in enforcement mode.</text>
+  <text class="audit-body" x="58" y="404">Select it with either of:</text>
+  <text class="state-body" x="58" y="424">collector  started without --enforce</text>
+  <text class="state-body" x="58" y="440">engine     started without --enforce-kernel</text>
+  <text class="audit-body" x="58" y="464">Every mitigation is still recorded, with</text>
+  <text class="state-body" x="58" y="480">"delivered": false and "detail": "audit-only mode".</text>
+
+  <!-- dashed arrow from alerted down into audit panel -->
+  <path d="M 400 230 L 400 296" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#qs-arrow-dash)"/>
+
+  <!-- ===== right panel: denials ===== -->
+  <rect x="520" y="300" width="520" height="204" rx="5" fill="#ffffff" stroke="#fca5a5"/>
+  <text class="panel-title" x="538" y="324" fill="#b91c1c">DENIED WHILE QUARANTINED</text>
+
+  <!-- hook 1 -->
+  <rect x="538" y="338" width="484" height="38" rx="4" fill="#fef2f2" stroke="#fecaca"/>
+  <text class="hook" x="552" y="356">bprm_check_security</text>
+  <text class="code" x="700" y="356">&#8722;EPERM</text>
+  <text class="hook-note" x="770" y="356">no new program image in the domain</text>
+  <text class="hook-note" x="552" y="370">denies execve, so a shell cannot be replaced by curl or a payload</text>
+
+  <!-- hook 2 -->
+  <rect x="538" y="384" width="484" height="38" rx="4" fill="#fef2f2" stroke="#fecaca"/>
+  <text class="hook" x="552" y="402">socket_connect</text>
+  <text class="code" x="700" y="402">&#8722;EPERM</text>
+  <text class="hook-note" x="770" y="402">blocked addresses, IMDS if quarantined</text>
+  <text class="hook-note" x="552" y="416">address blocks are node-wide; IMDS denial is domain-scoped</text>
+
+  <!-- hook 3 -->
+  <rect x="538" y="430" width="484" height="38" rx="4" fill="#fef2f2" stroke="#fecaca"/>
+  <text class="hook" x="552" y="448">file_open</text>
+  <text class="code" x="700" y="448">&#8722;EACCES</text>
+  <text class="hook-note" x="770" y="448">write-like opens inside the domain</text>
+  <text class="hook-note" x="552" y="462">EACCES not EPERM, so the denial looks like an ordinary permission error</text>
+
+  <text class="footnote" x="538" y="480">Each denial also emits an EVENT_LSM_BLOCK record, so enforcement</text>
+  <text class="footnote" x="538" y="494">is visible in telemetry and metrics, not only in its effect.</text>
+
+  <!-- vertical connector -->
+  <line x1="592" y1="232" x2="592" y2="296" stroke="#b91c1c" stroke-width="1.4" marker-end="url(#qs-arrow-deny)" stroke-dasharray="0"/>
+  <text class="footnote" x="604" y="272" fill="#b91c1c">enforcement begins</text>
+
+  <text class="footnote" x="32" y="540">A quarantined process keeps its open descriptors and existing sockets. Quarantine stops new execution, new blocked connections and new writes.</text>
+  <text class="footnote" x="32" y="558">Restarting the collector recreates the maps empty; the engine re-sends CMD_SET_ENFORCEMENT_MODE on reconnect and the next match re-quarantines.</text>
+</svg>

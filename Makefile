@@ -10,6 +10,7 @@
 #   make test       run the Python unit test suite
 #   make simulate   10k-event end-to-end MCP attack simulation
 #   make verify     full verification (build + tests + simulation)
+#   make check-docs check the documentation: figures, links, anchors, style
 #   make run        run the collector (needs root + BPF-LSM for enforcement)
 #   make engine     run the Python engine in the foreground
 #   make clean      remove build artifacts
@@ -122,6 +123,13 @@ test:
 
 simulate:
 	PYTHONPATH=src $(PYTHON) tests/simulate_mcp_attack.py
+
+# Documentation gate: every figure passes the geometry audit, every link and
+# anchor resolves, and the house style holds. No dependencies beyond python3.
+.PHONY: check-docs
+check-docs:
+	$(PYTHON) scripts/audit_svg.py docs/*.svg
+	$(PYTHON) scripts/check_docs.py
 
 verify:
 	./scripts/verify_and_benchmark.sh

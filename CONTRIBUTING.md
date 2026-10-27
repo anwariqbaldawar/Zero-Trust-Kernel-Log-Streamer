@@ -143,6 +143,35 @@ Keep comments about *why*, not *what*. Docstrings should state the invariant bei
 
 ---
 
+## Diagrams
+
+Figures are hand-written SVG in `docs/`, one file per figure, no external assets and no animation. They are
+read at 1120 px wide and stay legible in print, so the canvas width is fixed and type never goes below
+10 px. Adding a figure means:
+
+1. Write `docs/fig-<name>.svg` with an explicit `viewBox`, a `<title>`, a `<desc>`, and a class-based
+   `<style>` block. No `<image>` tags, no embedded fonts, no CDN references, no `<animate>`.
+2. Run `python3 scripts/audit_svg.py docs/fig-<name>.svg`. It estimates text width from font metrics and
+   fails a label that leaves its box or the canvas. Fix the layout, not the checker.
+3. Run `python3 scripts/preview_svg.py docs/fig-<name>.svg /tmp/fig.png` to eyeball it, since no SVG
+   renderer is required to build the project. The previewer implements only the element subset the figures
+   use: rect, line, circle, path, text, tspans, classes and rotation.
+4. Embed it with one image line and one italic caption line that states the claim the figure supports:
+
+   ```markdown
+   ![what it shows](docs/fig-name.svg)
+
+   *What the reader should conclude from it.*
+   ```
+
+   A figure without a caption is decoration and will be rejected.
+5. Run `make check-docs`. It fails a figure that no document embeds, a broken link or anchor, an unbalanced
+   code fence, an em dash or an emoji.
+
+Numbers inside a figure must come from the code or from a real run, the same rule as the prose.
+
+---
+
 ## Commits and pull requests
 
 Conventional Commits, one logical change per commit:

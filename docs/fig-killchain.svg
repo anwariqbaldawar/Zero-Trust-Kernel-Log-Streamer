@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 620" width="1120" height="620" role="img" aria-label="Attack chain timeline and detection coverage: five kernel-visible steps from a prompt-injected tool call to credential exfiltration between 0 and 6.8 milliseconds, and three lanes comparing image scanning, host agent polling and xSypher enforcement windows">
+  <title>Attack chain and detection coverage</title>
+  <desc>Five steps of an MCP prompt-injection compromise, each visible to the kernel and to no existing control, followed by a timeline comparing when image scanning, a one-second host agent poll and xSypher observe the same activity.</desc>
+  <defs>
+    <marker id="kc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="kc-arrow-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b91c1c"/>
+    </marker>
+    <style><![CDATA[
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .doc-title { font-size: 15px; font-weight: 600; }
+      .doc-sub { font-size: 11px; fill: #64748b; }
+      .section { font-size: 10px; font-weight: 700; letter-spacing: 1.3px; fill: #64748b; }
+      .card-time { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; fill: #0f172a; }
+      .card-title { font-size: 12px; font-weight: 600; }
+      .card-body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; fill: #334155; }
+      .card-seen { font-size: 10px; fill: #b91c1c; }
+      .card-seen-ok { font-size: 10px; fill: #15803d; }
+      .lane-label { font-size: 10.5px; font-weight: 600; fill: #334155; }
+      .lane-sub { font-size: 10px; fill: #94a3b8; }
+      .axis { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; fill: #94a3b8; }
+      .bar-label { font-size: 10.5px; font-weight: 600; }
+      .note { font-size: 10.5px; fill: #64748b; }
+      .badge-sans { font-size: 10px; font-weight: 700; letter-spacing: 0.4px; }
+    ]]></style>
+  </defs>
+
+  <rect width="1120" height="660" fill="#ffffff"/>
+
+  <text class="doc-title" x="32" y="34">Attack chain and detection coverage</text>
+  <text class="doc-sub" x="32" y="52">Times are illustrative: t=0 is the moment the model emits a tool call with an attacker-chosen argument. Measured enforcement latency is 2.1 to 3.8 ms.</text>
+
+  <!-- ================= section A: the chain ================= -->
+  <text class="section" x="32" y="88">A. FIVE KERNEL-VISIBLE STEPS</text>
+
+  <!-- card 1 -->
+  <rect x="32" y="100" width="196" height="176" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <rect x="32" y="100" width="196" height="4" rx="2" fill="#94a3b8"/>
+  <text class="card-time" x="46" y="126">t = 0.0 ms</text>
+  <text class="card-title" x="46" y="148">Tool call accepted</text>
+  <text class="card-body" x="46" y="172">mcp-server reads JSON-RPC</text>
+  <text class="card-body" x="46" y="186">frame from the model</text>
+  <text class="card-body" x="46" y="200">tool = "run_command"</text>
+  <text class="card-seen" x="46" y="238">no runtime control sees</text>
+  <text class="card-seen" x="46" y="252">this: the call is valid</text>
+
+  <!-- card 2 -->
+  <rect x="240" y="100" width="196" height="176" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <rect x="240" y="100" width="196" height="4" rx="2" fill="#f59e0b"/>
+  <text class="card-time" x="254" y="126">t = 0.4 ms</text>
+  <text class="card-title" x="254" y="148">Shell spawned</text>
+  <text class="card-body" x="254" y="172">execve("/bin/sh",</text>
+  <text class="card-body" x="254" y="186">  ["-c", "curl ..."])</text>
+  <text class="card-body" x="254" y="200">ppid = mcp-server</text>
+  <text class="card-seen" x="254" y="238">no control: /bin/sh is</text>
+  <text class="card-seen" x="254" y="252">present in the image</text>
+
+  <!-- card 3 -->
+  <rect x="448" y="100" width="196" height="176" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <rect x="448" y="100" width="196" height="4" rx="2" fill="#f59e0b"/>
+  <text class="card-time" x="462" y="126">t = 0.9 ms</text>
+  <text class="card-title" x="462" y="148">Metadata queried</text>
+  <text class="card-body" x="462" y="172">connect(169.254.169.254,</text>
+  <text class="card-body" x="462" y="186">  AF_INET, 80)</text>
+  <text class="card-body" x="462" y="200">IMDSv1 is unauthenticated</text>
+  <text class="card-seen" x="462" y="238">no control: egress to</text>
+  <text class="card-seen" x="462" y="252">link-local is permitted</text>
+
+  <!-- card 4 -->
+  <rect x="656" y="100" width="196" height="176" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <rect x="656" y="100" width="196" height="4" rx="2" fill="#dc2626"/>
+  <text class="card-time" x="670" y="126">t = 4.1 ms</text>
+  <text class="card-title" x="670" y="148">Token read</text>
+  <text class="card-body" x="670" y="172">openat(".../serviceaccount/</text>
+  <text class="card-body" x="670" y="186">  token", O_RDONLY)</text>
+  <text class="card-body" x="670" y="200">mounted into the workload</text>
+  <text class="card-seen" x="670" y="238">no control: same UID,</text>
+  <text class="card-seen" x="670" y="252">same mount namespace</text>
+
+  <!-- card 5 -->
+  <rect x="864" y="100" width="196" height="176" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <rect x="864" y="100" width="196" height="4" rx="2" fill="#dc2626"/>
+  <text class="card-time" x="878" y="126">t = 6.8 ms</text>
+  <text class="card-title" x="878" y="148">Credentials leave</text>
+  <text class="card-body" x="878" y="172">connect(203.0.113.9, 443)</text>
+  <text class="card-body" x="878" y="186">POST /collect with the</text>
+  <text class="card-body" x="878" y="200">token in the request body</text>
+  <text class="card-seen" x="878" y="238">no control: TLS to an</text>
+  <text class="card-seen" x="878" y="252">ordinary destination</text>
+
+  <!-- chain arrows between cards -->
+
+  <!-- ================= section B: coverage ================= -->
+  <path d="M 230 182 L 237 188 L 230 194" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 438 182 L 445 188 L 438 194" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 646 182 L 653 188 L 646 194" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 854 182 L 861 188 L 854 194" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text class="section" x="32" y="316">B. WHEN EACH CONTROL OBSERVES THE SAME ACTIVITY</text>
+
+  <!-- axis -->
+  <line x1="200" y1="352" x2="1040" y2="352" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="200" y1="347" x2="200" y2="500" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="368" y1="347" x2="368" y2="500" stroke="#f1f5f9" stroke-width="1"/>
+  <line x1="536" y1="347" x2="536" y2="500" stroke="#f1f5f9" stroke-width="1"/>
+  <line x1="704" y1="347" x2="704" y2="500" stroke="#f1f5f9" stroke-width="1"/>
+  <line x1="872" y1="347" x2="872" y2="500" stroke="#f1f5f9" stroke-width="1"/>
+  <line x1="1040" y1="347" x2="1040" y2="500" stroke="#f1f5f9" stroke-width="1"/>
+  <text class="axis" x="196" y="344">0 ms</text>
+  <text class="axis" x="358" y="344">2</text>
+  <text class="axis" x="526" y="344">4</text>
+  <text class="axis" x="694" y="344">6</text>
+  <text class="axis" x="862" y="344">8</text>
+  <text class="axis" x="1026" y="344">10</text>
+
+  <!-- lane 1: static controls -->
+  <text class="lane-label" x="32" y="378">Image scan,</text>
+  <text class="lane-label" x="32" y="392">admission control</text>
+  <text class="lane-sub" x="32" y="406">before the process exists</text>
+  <rect x="200" y="366" width="120" height="18" rx="3" fill="#f1f5f9" stroke="#e2e8f0"/>
+  <text class="bar-label" x="212" y="379" fill="#94a3b8">already finished</text>
+  <text class="note" x="336" y="379">nothing to inspect at runtime: every artefact is legitimate</text>
+
+  <!-- lane 2: host agent polling -->
+  <text class="lane-label" x="32" y="442">Host agent polling</text>
+  <text class="lane-sub" x="32" y="456">/proc every 1000 ms</text>
+  <rect x="200" y="430" width="840" height="18" rx="3" fill="#fef3c7" stroke="#fde68a"/>
+  <text class="bar-label" x="212" y="443" fill="#92400e">blind for the entire chain: first poll lands at 1000 ms, off this scale</text>
+
+  <!-- lane 3: xSypher -->
+  <text class="lane-label" x="32" y="498">xSypher-Stream</text>
+  <text class="lane-sub" x="32" y="512">tracepoint to LSM decision</text>
+  <line x1="200" y1="486" x2="1040" y2="486" stroke="#e2e8f0" stroke-width="1"/>
+  <rect x="233" y="470" width="152" height="18" rx="3" fill="#dbeafe" stroke="#93c5fd"/>
+  <text class="bar-label" x="240" y="483" fill="#1e40af">0.5 to 2.2 ms</text>
+  <circle cx="233" cy="479" r="3" fill="#1d4ed8"/>
+  <circle cx="385" cy="479" r="3" fill="#b91c1c"/>
+  <line x1="385" y1="466" x2="385" y2="492" stroke="#b91c1c" stroke-width="1.5"/>
+  <text class="note" x="396" y="483" fill="#b91c1c">execve denied, cgroup quarantined</text>
+
+  <!-- the moment the chain is cut -->
+  <line x1="385" y1="286" x2="385" y2="462" stroke="#b91c1c" stroke-width="1" stroke-dasharray="4 3"/>
+  <text class="badge-sans" x="392" y="300" fill="#b91c1c">chain cut here: steps 3 to 5 never execute</text>
+
+  <!-- footnote -->
+  <line x1="32" y1="546" x2="1060" y2="546" stroke="#e2e8f0" stroke-width="1"/>
+  <text class="note" x="32" y="570">Every step above is a legitimate syscall from a legitimate binary. The distinguishing signal is not the operation, it is the ancestry of the process that issues it.</text>
+  <text class="note" x="32" y="586">xSypher keys on that ancestry plus the destination of the operation, then denies at the LSM hook so the rest of the chain cannot run.</text>
+</svg>

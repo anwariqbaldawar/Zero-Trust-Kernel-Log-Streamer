@@ -58,6 +58,10 @@ Maps:
 All task metadata is read with `BPF_CORE_READ`, so the object is portable across kernel versions
 without recompilation. `nsproxy` is nullable and checked before use.
 
+![Deployment topology](fig-deployment.svg)
+
+*One collector per kernel. The only listening socket is the metrics port.*
+
 ### Collector
 
 Single-threaded epoll reactor. The ring buffer, client sockets and a `signalfd` share one epoll
