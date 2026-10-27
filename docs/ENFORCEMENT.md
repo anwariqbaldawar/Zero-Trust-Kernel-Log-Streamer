@@ -4,6 +4,10 @@ How a rule match becomes a kernel denial, what each hook actually stops, and whe
 
 ---
 
+![Quarantine state machine, audit-only path and denying hooks](fig-quarantine.svg)
+
+*Policy state lives in BPF maps; the audit-only mode skips the denial, not the detection.*
+
 ## 1. State
 
 Two levels of state exist, and only one of them is a decision.

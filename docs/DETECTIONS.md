@@ -44,6 +44,10 @@ ancestry is computed once rather than per rule.
 
 ---
 
+![Detection coverage matrix of ten techniques against the six rules](fig-coverage.svg)
+
+*Coverage per technique, with the four documented gaps and the change that closes each one.*
+
 ## 2. Rule catalogue
 
 | Rule | Severity | Event types | Actions | ATT&CK |

@@ -88,6 +88,10 @@ redirected to a path or an address that is not a fixed field in a 32-byte struct
 
 ## 4. Attack paths and control points
 
+![Attack chain timeline and detection coverage](fig-killchain.svg)
+
+*The same five syscalls seen by image scanning, by a one-second host poll, and by a tracepoint plus LSM hook.*
+
 | Path | Preconditions | Detected by | Stopped by |
 |---|---|---|---|
 | Prompt injection to shell | an `exec` or `shell` tool | `MCP_SHELL_BREAKOUT` on `execve` plus ancestry | cgroup quarantine, `bprm_check_security` denies further exec, optional `SIGKILL` |

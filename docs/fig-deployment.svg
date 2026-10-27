@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 560" width="1120" height="560" role="img" aria-label="Deployment topology: workload containers on one node, the kernel tracepoints and LSM hooks, a privileged collector, an unprivileged engine, and the outbound paths to Prometheus, a log shipper and the SIEM">
+  <title>Deployment topology</title>
+  <desc>One node runs the workloads, the kernel programs, a privileged collector and an unprivileged engine. The engine exposes metrics to Prometheus and writes a hash-chained audit log that a shipper forwards to the SIEM. No component other than the metrics exporter accepts a network connection.</desc>
+  <defs>
+    <marker id="dp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="dp-arrow-telemetry" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#0369a1"/>
+    </marker>
+    <marker id="dp-arrow-policy" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b45309"/>
+    </marker>
+    <style><![CDATA[
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .doc-title { font-size: 15px; font-weight: 600; }
+      .doc-sub { font-size: 11px; fill: #64748b; }
+      .zone { font-size: 10px; font-weight: 700; letter-spacing: 1.3px; fill: #64748b; }
+      .box-title { font-size: 11.5px; font-weight: 600; }
+      .box-sub { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 9.5px; fill: #64748b; }
+      .workload { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; fill: #334155; }
+      .edge { font-size: 9.5px; fill: #475569; }
+      .edge-telemetry { font-size: 9.5px; fill: #0369a1; font-weight: 600; }
+      .edge-policy { font-size: 9.5px; fill: #b45309; font-weight: 600; }
+      .footnote { font-size: 10.5px; fill: #64748b; }
+      .privilege { font-size: 9.5px; font-weight: 700; letter-spacing: 0.5px; }
+    ]]></style>
+  </defs>
+
+  <rect width="1120" height="560" fill="#ffffff"/>
+
+  <text class="doc-title" x="32" y="34">Deployment topology</text>
+  <text class="doc-sub" x="32" y="52">One collector per kernel. Nothing is shared between nodes, and the only listening socket is the metrics port.</text>
+
+  <!-- node boundary -->
+  <rect x="32" y="72" width="636" height="452" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="5 4"/>
+  <text class="zone" x="50" y="94">NODE &#183; bare metal or Kubernetes node</text>
+
+  <!-- workloads -->
+  <rect x="52" y="108" width="130" height="46" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <text class="workload" x="117" y="128" text-anchor="middle">mcp-server</text>
+  <text class="box-sub" x="117" y="143" text-anchor="middle">agent tool surface</text>
+
+  <rect x="194" y="108" width="130" height="46" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <text class="workload" x="259" y="128" text-anchor="middle">web app</text>
+  <text class="box-sub" x="259" y="143" text-anchor="middle">node, python</text>
+
+  <rect x="336" y="108" width="130" height="46" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <text class="workload" x="401" y="128" text-anchor="middle">batch job</text>
+  <text class="box-sub" x="401" y="143" text-anchor="middle">cron, ci runner</text>
+
+  <rect x="478" y="108" width="130" height="46" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <text class="workload" x="543" y="128" text-anchor="middle">notebook</text>
+  <text class="box-sub" x="543" y="143" text-anchor="middle">jupyter kernel</text>
+
+  <!-- kernel layer -->
+  <rect x="52" y="180" width="556" height="62" rx="4" fill="#eef2ff" stroke="#c7d2fe"/>
+  <text class="box-title" x="66" y="200">kernel: 5 tracepoints, 3 LSM hooks, 6 maps</text>
+  <text class="box-sub" x="66" y="216">execve &#183; connect &#183; openat &#183; memfd_create &#183; sched_process_exit</text>
+  <text class="box-sub" x="66" y="230">bprm_check_security &#183; socket_connect &#183; file_open</text>
+
+  <!-- kernel to collector -->
+  <line x1="177" y1="242" x2="177" y2="272" stroke="#0369a1" stroke-width="1.5" marker-end="url(#dp-arrow-telemetry)"/>
+  <text class="edge-telemetry" x="187" y="260">ring buffer, 640 B records</text>
+
+  <!-- collector -->
+  <rect x="52" y="274" width="250" height="98" rx="4" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="box-title" x="66" y="294">collector</text>
+  <text class="privilege" x="288" y="294" fill="#b91c1c" text-anchor="end">PRIVILEGED</text>
+  <text class="box-sub" x="66" y="312">C++20, libbpf, single epoll loop</text>
+  <text class="box-sub" x="66" y="326">CAP_BPF, CAP_PERFMON</text>
+  <text class="box-sub" x="66" y="340">applies validated 32 B commands</text>
+  <text class="box-sub" x="66" y="354">status line every 10 s on stderr</text>
+
+  <!-- collector <-> engine -->
+  <line x1="306" y1="302" x2="352" y2="302" stroke="#0369a1" stroke-width="1.5" marker-end="url(#dp-arrow-telemetry)"/>
+  <line x1="352" y1="332" x2="306" y2="332" stroke="#b45309" stroke-width="1.5" marker-end="url(#dp-arrow-policy)"/>
+  <text class="edge" x="329" y="296" text-anchor="middle">720 B</text>
+  <text class="edge-policy" x="329" y="348" text-anchor="middle">32 B</text>
+  <text class="edge" x="329" y="366" text-anchor="middle">AF_UNIX</text>
+
+  <!-- engine -->
+  <rect x="356" y="274" width="252" height="98" rx="4" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="box-title" x="370" y="294">engine</text>
+  <text class="privilege" x="594" y="294" fill="#15803d" text-anchor="end">UNPRIVILEGED</text>
+  <text class="box-sub" x="370" y="312">Python 3.12, asyncio, PyYAML</text>
+  <text class="box-sub" x="370" y="326">lineage graph, rule evaluation</text>
+  <text class="box-sub" x="370" y="340">metrics exporter on :9109</text>
+  <text class="box-sub" x="370" y="354">audit log, SHA-256 chained</text>
+
+  <!-- engine to prometheus -->
+  <path d="M 608 290 L 676 290 L 676 148 L 736 148" fill="none" stroke="#0369a1" stroke-width="1.5" marker-end="url(#dp-arrow-telemetry)"/>
+  <text class="edge-telemetry" x="684" y="212">GET /metrics</text>
+
+  <!-- engine to shipper -->
+  <path d="M 608 330 L 736 330" fill="none" stroke="#0369a1" stroke-width="1.5" marker-end="url(#dp-arrow-telemetry)"/>
+  <text class="edge-telemetry" x="684" y="324">JSONL</text>
+
+  <!-- node notes -->
+  <text class="edge" x="52" y="398">/run/xsypher/stream.sock &#183; mode 0750 &#183; not mounted into workloads</text>
+  <text class="edge" x="52" y="416">/var/log/xsypher/alerts.jsonl &#183; append only &#183; one writer per node</text>
+  <text class="edge" x="52" y="448">Under Kubernetes the collector and engine are two containers in one pod, with</text>
+  <text class="edge" x="52" y="464">host PID visibility for the collector. One pod means a rolling update replaces</text>
+  <text class="edge" x="52" y="480">both together, so the wire ABI never divides mid-rollout.</text>
+
+  <!-- prometheus -->
+  <rect x="740" y="112" width="348" height="76" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <text class="box-title" x="756" y="134">Prometheus</text>
+  <text class="box-sub" x="756" y="152">scrape :9109/metrics every 15 s</text>
+  <text class="box-sub" x="756" y="166">alerts on sensor silence and failed commands</text>
+  <text class="box-sub" x="756" y="180">--metrics-host 127.0.0.1 for local scrape</text>
+
+  <!-- shipper -->
+  <rect x="740" y="292" width="348" height="76" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <text class="box-title" x="756" y="314">Shipper</text>
+  <text class="box-sub" x="756" y="332">Vector, Fluent Bit or Filebeat</text>
+  <text class="box-sub" x="756" y="346">tails the JSONL log, keeps hash and prev_hash</text>
+  <text class="box-sub" x="756" y="360">so consumers verify the chain independently</text>
+
+  <!-- siem -->
+  <rect x="740" y="396" width="348" height="76" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+  <text class="box-title" x="756" y="418">SIEM and append-only storage</text>
+  <text class="box-sub" x="756" y="436">AlertLog.verify() on restore</text>
+  <text class="box-sub" x="756" y="450">correlation across nodes, retention per policy</text>
+  <text class="box-sub" x="756" y="464">the node is the record only until the line ships</text>
+
+  <line x1="914" y1="372" x2="914" y2="392" stroke="#475569" stroke-width="1.4" marker-end="url(#dp-arrow)"/>
+
+  <!-- footnote -->
+  <text class="footnote" x="32" y="546">Every arrow above is a local Unix socket, a file read, or a pull by the monitoring system. No component accepts instructions from the network.</text>
+</svg>
