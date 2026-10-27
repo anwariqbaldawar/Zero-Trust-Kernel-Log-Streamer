@@ -158,45 +158,39 @@ jobs:
       # distribution package is preferred; linux-tools-* is the fallback on
       # images where the standalone package is not published yet.
       - name: Ensure bpftool
-        shell: bash
+        # No implicit -e: this step probes several layouts before deciding, and
+        # a missing directory must not abort the probe.
+        shell: bash --noprofile --norc {0}
         run: |
           set -uo pipefail
-          # A working bpftool answers --version. On this image the binary usually
-          # arrives as /usr/lib/linux-tools/<kernel>/bpftool and the PATH entry
-          # is a dispatcher that fails when that kernel does not match, so test
-          # the command and not just its presence.
+
+          probe() {
+            echo "--- PATH: $(command -v bpftool || echo none)"
+            echo "--- kernel: $(uname -r)"
+            echo "--- linux-tools packages installed:"
+            dpkg -l 'linux-tools*' 2>/dev/null | awk '/^ii/ {print "    " $2 " " $3}' || true
+            echo "--- /usr/lib/linux-tools tree:"
+            ls -1 /usr/lib/linux-tools 2>/dev/null | sed 's/^/    /' || echo "    (absent)"
+            find /usr/lib/linux-tools -maxdepth 2 -name bpftool 2>/dev/null | sed 's/^/    /' || true
+          }
+
           if bpftool version >/dev/null 2>&1; then
             bpftool version
             exit 0
           fi
 
-          found=$(find /usr/lib/linux-tools /usr/lib/linux-tools-common -maxdepth 2 \
-                    -name bpftool -type f 2>/dev/null | head -n 1)
-          if [ -n "${found}" ]; then
-            echo "using ${found}"
-            sudo ln -sf "${found}" /usr/local/bin/bpftool
-            if bpftool version; then
+          for candidate in \
+            $(find /usr/lib/linux-tools /usr/lib/linux-tools-common -maxdepth 3 -name bpftool -type f 2>/dev/null) \
+            /usr/sbin/bpftool /usr/bin/bpftool; do
+            [ -x "${candidate}" ] || continue
+            echo "trying ${candidate}"
+            if sudo ln -sf "${candidate}" /usr/local/bin/bpftool 2>/dev/null && bpftool version; then
               exit 0
             fi
-          fi
+          done
 
-          # Last resort: build bpftool from the libbpf tree the job already needs
-          # for headers. This keeps the authoritative build unblocked when the
-          # distribution package layout changes again.
-          if [ ! -d /tmp/libbpf ]; then
-            git clone --depth 1 --branch v1.4.2 https://github.com/libbpf/libbpf.git /tmp/libbpf
-          fi
-          if make -C /tmp/libbpf/src -j"$(nproc)" >/dev/null 2>&1 && \
-             make -C /tmp/libbpf/src install >/dev/null 2>&1; then
-            sudo ldconfig
-          fi
-          found=$(find /tmp/libbpf /usr -maxdepth 6 -name bpftool -type f -perm -u+x 2>/dev/null | head -n 1)
-          if [ -n "${found}" ]; then
-            sudo ln -sf "${found}" /usr/local/bin/bpftool
-            bpftool version && exit 0
-          fi
-
-          echo "::error title=bpftool unavailable::no bpftool binary found in PATH, /usr/lib/linux-tools or the libbpf tree; the skeleton cannot be generated"
+          probe
+          echo "::error title=bpftool unavailable::no working bpftool binary; see the probe output in the step log. The skeleton cannot be generated without it."
           exit 1
 
       - name: Show toolchain versions
