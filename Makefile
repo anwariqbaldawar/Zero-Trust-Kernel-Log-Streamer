@@ -58,6 +58,7 @@ LIBBPF_LIBS   ?= $(shell pkg-config --libs libbpf 2>/dev/null || echo -lbpf)
 BPF_CFLAGS := -g -O2 -target bpf \
               -D__TARGET_ARCH_$(TARGET_ARCH) \
               -Wall -Wextra -Wno-unused-parameter \
+              -Wno-missing-declarations -Wno-comment \
               -Iinclude -I$(BUILD) \
               $(LIBBPF_CFLAGS)
 CXXFLAGS  ?= -std=c++20 -O3 -g -Wall -Wextra -Wpedantic -Wno-unused-parameter

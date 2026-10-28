@@ -240,7 +240,7 @@ static __always_inline int path_prefix_match(const char *s, int slen,
 }
 
 /* Bounded strlen over a scratch buffer. */
-static __always_inline int bounded_len(const char *s, int max)
+static __always_inline __attribute__((unused)) int bounded_len(const char *s, int max)
 {
     if (max > XSYPHER_SCAN_LEN - 1)
         max = XSYPHER_SCAN_LEN - 1;
@@ -293,20 +293,54 @@ static __always_inline int comp_equals(const char *comp, int clen,
 static __always_inline int last_component(const char *s, int slen,
                                           char *out, int out_sz)
 {
-    if (slen <= 0 || out_sz <= 1)
+    if (!s || !out || slen <= 0 || out_sz <= 1)
         return 0;
+    if (slen > MAX_PATH_LEN)
+        slen = MAX_PATH_LEN;
     int i = slen - 1;
-    while (i >= 0 && s[i] != '/')
+    for (int k = 0; k < MAX_PATH_LEN; k++) {
+        if (i < 0 || s[i] == '/')
+            break;
         i--;
+    }
     i++;
     int clen = slen - i;
     if (clen <= 0)
         return 0;
     if (clen > out_sz - 1)
         clen = out_sz - 1;
-    __builtin_memcpy(out, &s[i], clen);
+    if (clen > MAX_PATH_LEN - 1)
+        clen = MAX_PATH_LEN - 1;
+    for (int j = 0; j < MAX_PATH_LEN; j++) {
+        if (j >= clen)
+            break;
+        out[j] = s[i + j];
+    }
     out[clen] = '\0';
     return clen;
+}
+
+/*
+ * Bounded string copy into a MAX_PATH_LEN destination buffer.
+ * Replaces variable-length __builtin_memcpy so the BPF backend emits
+ * valid bounded-loop instructions instead of unsupported memcpy calls.
+ */
+static __always_inline void copy_path_str(char *dst, const char *src, int len)
+{
+    if (!dst)
+        return;
+    if (!src || len <= 0) {
+        dst[0] = '\0';
+        return;
+    }
+    if (len > MAX_PATH_LEN - 1)
+        len = MAX_PATH_LEN - 1;
+    for (int i = 0; i < MAX_PATH_LEN; i++) {
+        if (i >= len)
+            break;
+        dst[i] = src[i];
+    }
+    dst[len] = '\0';
 }
 
 /* ----------------------------------------------------------------------- */
@@ -968,10 +1002,7 @@ static __always_inline int bprm_restricted_reason(struct linux_binprm *bprm,
     fpath = BPF_CORE_READ(file, f_path);
     pathp = resolve_path(&fpath, &plen);
     if (pathp && plen > 0) {
-        int copy = plen < MAX_PATH_LEN - 1 ? plen : MAX_PATH_LEN - 1;
-
-        __builtin_memcpy(pathbuf, pathp, copy);
-        pathbuf[copy] = '\0';
+        copy_path_str(pathbuf, pathp, plen);
         blen = last_component(pathp, plen, base, MAX_COMM_LEN);
     }
     *out_plen = plen;
@@ -1026,10 +1057,7 @@ int BPF_PROG(xsypher_lsm_bprm_check, struct linux_binprm *bprm, int ret)
         if (lin.ai_runtime) {
             ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
-                __builtin_memcpy(ev->filename, pathbuf,
-                                 plen < MAX_PATH_LEN - 1 ? plen
-                                                         : MAX_PATH_LEN - 1);
-                ev->filename[MAX_PATH_LEN - 1] = '\0';
+                copy_path_str(ev->filename, pathbuf, plen);
             }
             emit_enforced_inline(ev, reason, ino, dev, &lin);
             metric_inc(METRIC_LSM_BLOCKS);
@@ -1056,10 +1084,7 @@ int BPF_PROG(xsypher_lsm_bprm_check, struct linux_binprm *bprm, int ret)
     if (fail_closed_triggered() && lin.ai_runtime) {
         ev = reserve_event(EVENT_ENFORCED_INLINE);
         if (ev) {
-            int copy = plen < MAX_PATH_LEN - 1 ? plen : MAX_PATH_LEN - 1;
-
-            __builtin_memcpy(ev->filename, pathbuf, copy);
-            ev->filename[copy] = '\0';
+            copy_path_str(ev->filename, pathbuf, plen);
         }
         emit_enforced_inline(ev, BLOCK_REASON_FAIL_CLOSED, ino, dev, &lin);
         metric_inc(METRIC_FAIL_CLOSED_BLOCKS);
@@ -1071,10 +1096,7 @@ int BPF_PROG(xsypher_lsm_bprm_check, struct linux_binprm *bprm, int ret)
     if (should_block_quarantine(tgid, cgroup_id)) {
         ev = reserve_event(EVENT_ENFORCED_INLINE);
         if (ev && plen > 0) {
-            int copy = plen < MAX_PATH_LEN - 1 ? plen : MAX_PATH_LEN - 1;
-
-            __builtin_memcpy(ev->filename, pathbuf, copy);
-            ev->filename[copy] = '\0';
+            copy_path_str(ev->filename, pathbuf, plen);
         }
         emit_enforced_inline(ev, BLOCK_REASON_QUARANTINE_EXEC, ino, dev, &lin);
         metric_inc(METRIC_LSM_BLOCKS);
@@ -1201,7 +1223,7 @@ int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
 
         /* AWS IPv6 IMDS + IPv4-mapped IPv6 IMDS. */
         if ((quarantine_state || lin.ai_runtime) &&
-            ipv6_is_imds(&addr6.sin6_addr.s6_addr[0])) {
+            ipv6_is_imds(&addr6.sin6_addr.in6_u.u6_addr8[0])) {
             ev = reserve_event(EVENT_CONNECT);
             if (ev) {
                 ev->af_family = AF_INET6;
@@ -1266,10 +1288,7 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
         pathp = resolve_path(&fpath, &plen);
         ev = reserve_event(EVENT_ENFORCED_INLINE);
         if (ev && pathp && plen > 0) {
-            int copy = plen < MAX_PATH_LEN - 1 ? plen : MAX_PATH_LEN - 1;
-
-            __builtin_memcpy(ev->filename, pathp, copy);
-            ev->filename[copy] = '\0';
+            copy_path_str(ev->filename, pathp, plen);
         }
         emit_enforced_inline(ev, BLOCK_REASON_FAIL_CLOSED, ino, dev, &lin);
         metric_inc(METRIC_FAIL_CLOSED_BLOCKS);
@@ -1302,10 +1321,7 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
         if (sensitive) {
             ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
-                int copy = plen < MAX_PATH_LEN - 1 ? plen : MAX_PATH_LEN - 1;
-
-                __builtin_memcpy(ev->filename, pathp, copy);
-                ev->filename[copy] = '\0';
+                copy_path_str(ev->filename, pathp, plen);
                 ev->open_flags = f_mode;
             }
             emit_enforced_inline(ev, BLOCK_REASON_CREDENTIAL_READ, ino, dev,
@@ -1316,10 +1332,7 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
         if (staged) {
             ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
-                int copy = plen < MAX_PATH_LEN - 1 ? plen : MAX_PATH_LEN - 1;
-
-                __builtin_memcpy(ev->filename, pathp, copy);
-                ev->filename[copy] = '\0';
+                copy_path_str(ev->filename, pathp, plen);
                 ev->open_flags = f_mode;
             }
             emit_enforced_inline(ev, BLOCK_REASON_WRITE_DENIED, ino, dev,
@@ -1337,12 +1350,7 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
     ev = reserve_event(EVENT_OPENAT);
     if (!ev)
         return 0;
-    {
-        int copy = plen < MAX_PATH_LEN - 1 ? plen : MAX_PATH_LEN - 1;
-
-        __builtin_memcpy(ev->filename, pathp, copy);
-        ev->filename[copy] = '\0';
-    }
+    copy_path_str(ev->filename, pathp, plen);
     fill_enforcement_ctx(ev, ino, dev, &lin);
     ev->open_flags = f_mode;
     ev->retval = staged ? 1 : 0;

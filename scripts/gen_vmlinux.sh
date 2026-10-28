@@ -418,7 +418,6 @@ struct in6_addr {
         __be16 u6_addr16[8];
         __be32 u6_addr32[4];
     } in6_u;
-    __u8 s6_addr[16];
 };
 
 struct sockaddr_in {

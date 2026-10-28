@@ -98,6 +98,7 @@ if(CLANG_EXECUTABLE AND BPFTOOL_EXECUTABLE)
             -g -O2 -target bpf
             -D__TARGET_ARCH_${XSYPHER_BPF_ARCH}
             -Wall -Wextra -Wno-unused-parameter
+            -Wno-missing-declarations -Wno-comment
             ${LIBBPF_CFLAGS}
             -I${CMAKE_SOURCE_DIR}/include
             -I${CMAKE_BINARY_DIR}
