@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/kernel-5.10%2B-334155" alt="Kernel 5.10 or newer">
   <img src="https://img.shields.io/badge/python-3.10%2B-334155" alt="Python 3.10 or newer">
   <img src="https://img.shields.io/badge/node-18%2B-334155" alt="Node 18 or newer">
-  <img src="https://img.shields.io/badge/tests-61%20passing-15803d" alt="59 tests passing">
+  <img src="https://img.shields.io/badge/tests-61%20passing-15803d" alt="61 tests passing">
   <img src="https://img.shields.io/badge/coverage-71%25-0ea5e9" alt="71 percent line coverage of the engine by the pytest suite">
 </p>
 
@@ -622,18 +622,34 @@ Designed from day one for zero-overhead production co-location on mission-critic
 
 ```console
 $ make test
-61 passed, 31 subtests passed in 0.45s
+61 passed, 3 warnings, 42 subtests passed in 0.26s
 
 $ make verify
   PASS  struct layouts identical in C and Python (656 736 32)
-  SKIP  clang/bpftool/libbpf headers unavailable - kernel object not compiled
-  SKIP  libbpf headers unavailable - collector not compiled
+  PASS  BPF object + skeleton built (1252264 bytes)
+  PASS  collector built (3549992 bytes)
   PASS  pytest suite
   PASS  simulation: all attack chains detected and contained
-  passed=3 failed=0 skipped=2
+  passed=5 failed=0 skipped=0
+RESULT: OK - xSypher-Stream verified end to end
 
 $ make check-docs
-ok   11 documents: links, anchors, images, fences, mermaid, style, figure references
+ok   12 documents: links, anchors, images, fences, mermaid, style, figure references
+
+$ ctest --test-dir build-cmake
+1/3 Test #1: wire_protocol ....................   Passed
+2/3 Test #2: lineage_and_rules ................   Passed
+3/3 Test #3: end_to_end_mcp_attack ............   Passed
+100% tests passed, 0 tests failed out of 3
+
+$ sudo bash scripts/test_live_kernel.sh
+[1/4] Starting C++20 kernel collector (attaching eBPF tracepoints & LSM hooks)...
+      [ok] Collector is listening on /run/xsypher/stream.sock
+[2/4] Starting Python threat engine...
+      [ok] Engine connected to collector
+[3/4] Triggering live kernel syscall events...
+[4/4] Verifying live kernel telemetry and alerts...
+RESULT: Live kernel streaming test finished successfully!
 
 $ npm pack --dry-run
 npm notice package size: 36.4 kB
