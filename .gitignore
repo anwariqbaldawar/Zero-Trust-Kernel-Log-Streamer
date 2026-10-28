@@ -1,5 +1,6 @@
 # Build artifacts
 build/
+build-*/
 *.o
 *.skel.h
 xsypher-collector
