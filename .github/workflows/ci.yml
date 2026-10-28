@@ -152,7 +152,7 @@ jobs:
           fi
 
           failed=()
-          for pkg in clang llvm libelf-dev zlib1g-dev build-essential cmake pkg-config libbpf-dev; do
+          for pkg in clang llvm libelf-dev zlib1g-dev build-essential cmake pkg-config libbpf-dev python3-pytest python3-yaml; do
             install_one "$pkg" || failed+=("$pkg")
           done
 

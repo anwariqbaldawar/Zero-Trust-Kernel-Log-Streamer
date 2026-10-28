@@ -169,13 +169,29 @@ find_program(PYTHON3_EXECUTABLE NAMES python3)
 if(PYTHON3_EXECUTABLE)
   enable_testing()
 
-  add_test(NAME wire_protocol
-    COMMAND ${PYTHON3_EXECUTABLE} -m pytest tests/test_wire_protocol.py -q
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  execute_process(
+    COMMAND ${PYTHON3_EXECUTABLE} -m pytest --version
+    RESULT_VARIABLE PYTEST_EXIT
+    OUTPUT_QUIET ERROR_QUIET
+  )
 
-  add_test(NAME lineage_and_rules
-    COMMAND ${PYTHON3_EXECUTABLE} -m pytest tests/test_lineage_and_rules.py -q
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  if(PYTEST_EXIT EQUAL 0)
+    add_test(NAME wire_protocol
+      COMMAND ${PYTHON3_EXECUTABLE} -m pytest tests/test_wire_protocol.py -q
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+    add_test(NAME lineage_and_rules
+      COMMAND ${PYTHON3_EXECUTABLE} -m pytest tests/test_lineage_and_rules.py -q
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  else()
+    add_test(NAME wire_protocol
+      COMMAND ${PYTHON3_EXECUTABLE} -m unittest tests/test_wire_protocol.py
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+    add_test(NAME lineage_and_rules
+      COMMAND ${PYTHON3_EXECUTABLE} -m unittest tests/test_lineage_and_rules.py
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  endif()
 
   add_test(NAME end_to_end_mcp_attack
     COMMAND ${PYTHON3_EXECUTABLE} tests/simulate_mcp_attack.py --events 2000
