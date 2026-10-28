@@ -270,7 +270,7 @@ jobs:
         run: |
           file build/xsypher.bpf.o
           llvm-objdump -h build/xsypher.bpf.o | sed -n '1,20p'
-          grep -c "SEC" build/xsypher.skel.h
+          grep -c "xsypher_bpf" build/xsypher.skel.h
 
       - name: CMake build + ctest
         if: steps.bpftool.outputs.usable == 'yes'
