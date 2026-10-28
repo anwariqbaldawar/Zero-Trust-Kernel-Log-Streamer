@@ -54,8 +54,16 @@ jobs:
       - name: BPF type-check (stub vmlinux.h + gcc)
         shell: bash
         run: |
+          if [ ! -d /usr/include/bpf ]; then
+            echo "::warning::libbpf headers absent; skipping BPF type-check (the build job compiles the object with clang)"
+            exit 0
+          fi
           mkdir -p /tmp/bpfinc/bpf
-          ./scripts/gen_vmlinux.sh /tmp/bpfinc/vmlinux.h
+          # --stub forces the minimal fallback header: the runner may have bpftool
+          # and kernel BTF, which would produce a full vmlinux.h that gcc (not
+          # clang) cannot type-check. The stub is deterministic and sufficient
+          # for a syntax check; the build job does the authoritative clang build.
+          FORCE=1 ./scripts/gen_vmlinux.sh --stub /tmp/bpfinc/vmlinux.h
           gcc -fsyntax-only -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wcomment \
             -D__TARGET_ARCH_x86 \
             -D'__builtin_preserve_access_index(x)=(x)' -DBPF_NO_PRESERVE_ACCESS_INDEX \

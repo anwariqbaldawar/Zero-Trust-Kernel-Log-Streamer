@@ -16,7 +16,16 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-OUT="${1:-${REPO_ROOT}/include/vmlinux.h}"
+STUB=0
+OUT=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --stub) STUB=1 ;;
+        -*) ;;
+        *) [[ -z "$OUT" ]] && OUT="$_arg" ;;
+    esac
+done
+OUT="${OUT:-${REPO_ROOT}/include/vmlinux.h}"
 FORCE="${FORCE:-0}"
 
 log()  { printf '[gen_vmlinux] %s\n' "$*" >&2; }
@@ -41,6 +50,14 @@ if command -v bpftool >/dev/null 2>&1; then
     have_bpftool=1
 else
     log "bpftool not found in PATH"
+fi
+
+# --stub forces the minimal fallback header, bypassing the BTF dump entirely.
+# CI's fast type-check uses it so the result is deterministic and does not
+# depend on the runner's kernel BTF or bpftool.
+if [[ "${STUB}" -eq 1 ]]; then
+    have_bpftool=0
+    log "--stub requested; forcing the minimal fallback header"
 fi
 
 if [[ "${have_bpftool}" -eq 1 ]]; then
