@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 2.x (ABI v2) | supported, security fixes |
+| 3.x (ABI v3) | supported, security fixes |
+| 2.x (ABI v2) | end of life |
 | 1.x (ABI v1) | end of life |
 
 ## Reporting a vulnerability

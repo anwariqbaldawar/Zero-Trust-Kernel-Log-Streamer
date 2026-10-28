@@ -108,6 +108,7 @@ typedef __u32 uid_t;
 typedef __u32 gid_t;
 typedef int pid_t;
 typedef unsigned int umode_t;
+typedef __u32 dev_t;
 
 /* Map and helper enums normally carried in the kernel's own BTF. */
 enum bpf_map_type {
@@ -304,8 +305,21 @@ struct file {
 
 struct file_operations;
 
+struct super_block {
+    dev_t s_dev;
+};
+
 struct inode {
     umode_t i_mode;
+    __u64 i_ino;
+    struct super_block *i_sb;
+};
+
+struct kernel_siginfo {
+    int si_signo;
+    int si_errno;
+    int si_code;
+    int _pad;
 };
 
 struct linux_binprm {
@@ -387,6 +401,7 @@ struct in6_addr {
         __be16 u6_addr16[8];
         __be32 u6_addr32[4];
     } in6_u;
+    __u8 s6_addr[16];
 };
 
 struct sockaddr_in {
@@ -402,6 +417,12 @@ struct sockaddr_in6 {
     __be32 sin6_flowinfo;
     struct in6_addr sin6_addr;
     __u32 sin6_scope_id;
+};
+
+/* Opaque stand-in for the kernel's union bpf_attr (real value provided by
+ * vmlinux.h BTF on the target). */
+union bpf_attr {
+    char _[128];
 };
 
 #ifndef BPF_NO_PRESERVE_ACCESS_INDEX

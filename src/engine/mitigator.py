@@ -33,6 +33,7 @@ from typing import Any, Callable, Iterable, Sequence
 
 from .abi import (
     IMDS_IPV4,
+    BlockReason,
     CmdType,
     Event,
     PolicyCommand,
@@ -388,6 +389,8 @@ class Mitigator:
                 "mnt_ns_id": event.mnt_ns_id,
                 "pid_ns_id": event.pid_ns_id,
                 "net_ns_id": event.net_ns_id,
+                "lineage_root_pid": event.lineage_root_pid,
+                "lineage_flags": event.lineage_flags,
             },
             "event": {
                 "type": event.event_name,
@@ -397,7 +400,11 @@ class Mitigator:
                 "daddr_v6": event.daddr_v6,
                 "dport": event.dport,
                 "open_flags": event.open_flags,
+                "block_reason": BlockReason.name(event.open_flags),
                 "blocked_by_lsm": bool(event.blocked_by_lsm),
+                "enforced_inline": bool(event.enforced_inline),
+                "target_ino": event.target_ino,
+                "target_dev": event.target_dev,
                 "seq_no": event.seq_no,
             },
             "ancestry": list(match.ancestry),

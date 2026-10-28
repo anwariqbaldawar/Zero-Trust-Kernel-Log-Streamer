@@ -264,6 +264,10 @@ def build_registry() -> MetricsRegistry:
     registry.gauge("xsypher_rule_cooldowns_active", "Active per-(rule, pid) cooldown entries")
     registry.gauge("xsypher_ringbuf_frames_dropped", "Wire frames dropped by the collector")
     registry.counter("xsypher_lsm_blocks_seen", "Inline LSM denials observed in telemetry")
+    registry.counter("xsypher_enforced_inline_events_total",
+                     "Synchronous in-kernel denials, by block reason")
+    registry.gauge("xsypher_collector_status", "1 when the collector heartbeat is fresh, else 0")
+    registry.gauge("xsypher_collector_heartbeat_age_seconds", "Age of the last collector heartbeat")
     registry.counter("xsypher_commands_sent_total", "Policy commands sent to the collector")
     registry.counter("xsypher_commands_failed_total", "Policy commands that failed to send")
     registry.summary("xsypher_rule_eval_seconds", "Time spent evaluating rules per event")

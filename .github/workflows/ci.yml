@@ -38,6 +38,29 @@ jobs:
       - name: ABI parity (C header vs ctypes)
         run: ./scripts/verify_and_benchmark.sh --quick
 
+      # Fast kernel-side check that needs only gcc and the libbpf headers, not
+      # clang or bpftool. It type-checks the CO-RE source against a stub
+      # vmlinux.h generated from this runner, so a layout or helper mistake
+      # fails here in seconds instead of at the slower authoritative build.
+      - name: Install libbpf headers (best effort)
+        shell: bash
+        run: |
+          if [ ! -d /usr/include/bpf ]; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y --no-install-recommends libbpf-dev >/dev/null 2>&1 || true
+          fi
+          test -d /usr/include/bpf && echo "libbpf headers present" || echo "::warning::libbpf headers absent; BPF type-check will use the bundled stub only"
+
+      - name: BPF type-check (stub vmlinux.h + gcc)
+        shell: bash
+        run: |
+          mkdir -p /tmp/bpfinc/bpf
+          ./scripts/gen_vmlinux.sh /tmp/bpfinc/vmlinux.h
+          gcc -fsyntax-only -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wcomment \
+            -D__TARGET_ARCH_x86 \
+            -D'__builtin_preserve_access_index(x)=(x)' -DBPF_NO_PRESERVE_ACCESS_INDEX \
+            -I/tmp/bpfinc -Iinclude src/bpf/xsypher.bpf.c
+
       - name: Unit tests
         run: PYTHONPATH=src python -m pytest tests -q --maxfail=1
 

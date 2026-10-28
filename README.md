@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/kernel-5.10%2B-334155" alt="Kernel 5.10 or newer">
   <img src="https://img.shields.io/badge/python-3.10%2B-334155" alt="Python 3.10 or newer">
   <img src="https://img.shields.io/badge/node-18%2B-334155" alt="Node 18 or newer">
-  <img src="https://img.shields.io/badge/tests-59%20passing-15803d" alt="59 tests passing">
+  <img src="https://img.shields.io/badge/tests-61%20passing-15803d" alt="59 tests passing">
   <img src="https://img.shields.io/badge/coverage-71%25-0ea5e9" alt="71 percent line coverage of the engine by the pytest suite">
 </p>
 
@@ -147,8 +147,8 @@ Traditional container security assumes static workloads: a web server executes `
 
 | Area | What ships |
 |---|---|
-| **Kernel telemetry** | eBPF CO-RE programs on 5 tracepoints (`execve`, `connect`, `openat`, `memfd_create`, `sched_process_exit`) streaming fixed 640-byte records through a 16 MiB ring buffer |
-| **Inline enforcement** | 3 BPF LSM hooks (`bprm_check_security`, `socket_connect`, `file_open`) returning `-EPERM` or `-EACCES` for a quarantined pid, cgroup or address |
+| **Kernel telemetry** | eBPF CO-RE programs on 5 tracepoints (`execve`, `connect`, `memfd_create`, `sched_process_exit`, `sched_process_fork`) streaming fixed 656-byte records through a 16 MiB ring buffer |
+| **Inline enforcement** | 5 BPF LSM hooks (`bprm_check_security`, `socket_connect`, `file_open`, `task_kill`, `bpf`) returning `-EPERM` or `-EACCES` for a quarantined pid, cgroup or address |
 | **Lineage graph** | ancestry resolution to 8 hops with a 5 s post-exit TTL, bounded at 200,000 tracked processes with oldest-first eviction |
 | **Declarative rules** | 6 YAML rules as data: 4 critical, 2 high, each with explicit actions and a 5 s per-subject cooldown |
 | **Mitigation** | `quarantine_pid`, `quarantine_cgroup`, `block_ipv4`, `block_imds` and optional `SIGKILL`, translated into 32-byte commands the collector validates before any map write |
@@ -156,6 +156,9 @@ Traditional container security assumes static workloads: a web server executes `
 | **Observability** | Prometheus text exporter on `:9109`, ANSI operator console that degrades to plain lines for a log shipper |
 | **Zero-friction install** | `npx xsypher-stream` bootstraps and caches everything it needs; the npm package has no dependencies and no install scripts |
 | **Safety switch** | audit-only mode where detection, metrics and the audit chain behave identically but nothing is denied |
+| **In-kernel lineage** | `sched_process_fork` propagates AI-runtime flags, the root PID and quarantine state to children in the kernel; `bprm_check_security` denies a tracked AI lineage executing a restricted shell or a renamed binary in 0 ms |
+| **Fail-closed** | the engine heartbeats into `config_map`; when the collector stops receiving it the kernel denies tracked AI lineages at the LSM hooks instead of failing open |
+| **Tamper protection** | `lsm/task_kill` blocks `SIGKILL`/`SIGTERM`/`SIGSTOP` against protected PIDs and `lsm/bpf` blocks unauthorized map mutation, both lifted by an authenticated shutdown token |
 
 ## How it works
 
@@ -163,11 +166,11 @@ Traditional container security assumes static workloads: a web server executes `
 flowchart LR
     subgraph K["Kernel space"]
         direction TB
-        TP["5 tracepoints<br/>execve · connect · openat<br/>memfd_create · sched_process_exit"]
+        TP["5 tracepoints<br/>execve · connect · memfd_create<br/>sched_process_exit · sched_process_fork"]
         RB[("ring buffer<br/>16 MiB")]
-        LSM["3 BPF LSM hooks<br/>bprm_check_security<br/>socket_connect · file_open"]
+        LSM["5 BPF LSM hooks<br/>bprm_check_security · socket_connect<br/>file_open · task_kill · bpf"]
         MAPS[("policy maps<br/>quarantined_pids<br/>quarantined_cgroups<br/>blocked_ipv4 · config")]
-        TP -->|"640 B records"| RB
+        TP -->|"656 B records"| RB
         LSM -->|"EVENT_LSM_BLOCK"| RB
         MAPS -->|"deny decision"| LSM
     end
@@ -176,7 +179,7 @@ flowchart LR
         ENG["xSypher-Stream engine<br/>Python asyncio<br/>no capabilities"]
         OUT["operator console<br/>/metrics :9109<br/>alerts.jsonl"]
     end
-    RB -->|"720 B frame"| COL
+    RB -->|"736 B frame"| COL
     COL -->|"AF_UNIX SOCK_SEQPACKET"| ENG
     ENG -->|"32 B policy command"| COL
     COL -->|"bpf_map_update_elem"| MAPS
@@ -187,15 +190,15 @@ The wire is three fixed structures, and `include/xsypher_abi.h` is their only de
 
 | Structure | Size | Direction |
 |---|---|---|
-| `kernel_event_t` | 640 B | kernel ring buffer record |
-| `wire_event_msg_t` | 720 B | collector to engine (80 B header plus the event) |
+| `kernel_event_t` | 656 B | kernel ring buffer record |
+| `wire_event_msg_t` | 736 B | collector to engine (80 B header plus the event) |
 | `wire_policy_cmd_t` | 32 B | engine to collector |
 
 <p align="center">
   <img src="docs/fig-frame.svg" alt="Binary layout of wire structures: kernel_event_t, wire_event_msg_t, and wire_policy_cmd_t" width="1120">
 </p>
 
-Both sides validate magic `0x58535950` and version `2` on every message and reject a mismatch with a logged
+Both sides validate magic `0x58535950` and version `3` on every message and reject a mismatch with a logged
 reason, so a partial rollout fails at the first frame instead of misreading a layout. `src/engine/abi.py`
 mirrors the header with `ctypes` and asserts every size and offset at import; `make verify` re-derives the
 layout by compiling the C header.
@@ -223,7 +226,7 @@ sequenceDiagram
 
     Attacker->>MCP: Poisoned Tool Call (curl 169.254.169.254)
     MCP->>Kernel: sys_execve("/bin/sh")
-    Kernel->>RingBuf: bpf_ringbuf_reserve(wire_event_msg_t: 720 B)
+    Kernel->>RingBuf: bpf_ringbuf_reserve(wire_event_msg_t: 736 B)
     RingBuf-->>Collector: epoll wake (zero copy read)
     Collector->>Engine: AF_UNIX SOCK_SEQPACKET frame
     Note over Engine: O(depth) lineage check: parent is AI runtime (node/python)
@@ -619,10 +622,10 @@ Designed from day one for zero-overhead production co-location on mission-critic
 
 ```console
 $ make test
-59 passed, 31 subtests passed in 0.45s
+61 passed, 31 subtests passed in 0.45s
 
 $ make verify
-  PASS  struct layouts identical in C and Python (640 720 32)
+  PASS  struct layouts identical in C and Python (656 736 32)
   SKIP  clang/bpftool/libbpf headers unavailable - kernel object not compiled
   SKIP  libbpf headers unavailable - collector not compiled
   PASS  pytest suite
@@ -649,10 +652,10 @@ figure that no document embeds. Both run in CI.
 
 ## Limits and non-goals
 
-- `openat2` is a separate tracepoint and is not hooked, so a credential read through `openat2` is invisible.
+- `openat2` is not hooked; file policy is enforced through `lsm/file_open`, which sees every open path.
 - `file_open` sees only the dentry basename; the credential-path branch cannot match absolute prefixes.
   Effective in-kernel file protection today is write denial inside a quarantined domain.
-- IMDS denial covers IPv4. `fd00:ec2::254` over IPv6 is detected after the fact on the connect event.
+- IMDS denial covers IPv4 and the AWS IPv6 address `fd00:ec2::254` plus IPv4-mapped IPv6, inline at `lsm/socket_connect`.
 - The C2 rule is a port blocklist. A custom port is not covered; that needs behaviour scoring, not a list.
 - `core_pattern` writes are captured by the `openat` filter but no shipped rule reads them.
 - `args` captures four `argv` pointers of 64 bytes: a command line, not a payload.
@@ -687,8 +690,8 @@ src/engine/              abi, lineage, rule_engine, mitigator, metrics, tui, mai
 config/rules.yaml        the 6 shipped rules
 deploy/                  Dockerfile, compose, DaemonSet, systemd units
 scripts/                 verification, docs checks, asset and demo generators
-tests/                   59 tests, 31 subtests, plus the end-to-end harness
-docs/                    eight reference documents and eight figures
+tests/                   61 tests, 31 subtests, plus the end-to-end harness
+docs/                    nine reference documents and eight figures
 assets/                  logo, banner, social preview, demo GIF and its transcript
 ```
 

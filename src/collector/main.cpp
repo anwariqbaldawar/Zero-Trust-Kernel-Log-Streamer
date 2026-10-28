@@ -202,6 +202,24 @@ void handle_policy_command(xsypher::BpfLoader& loader, const wire_policy_cmd_t& 
         case CMD_SET_ENFORCEMENT_MODE:
             result = loader.set_enforcement_mode(cmd.enforcement_mode);
             break;
+        case CMD_SET_HEARTBEAT:
+            result = loader.set_heartbeat(cmd.target_cgroup_id);
+            break;
+        case CMD_SET_FAIL_CLOSED:
+            result = loader.set_fail_closed(cmd.value != 0);
+            break;
+        case CMD_SET_SHUTDOWN_TOKEN:
+            result = loader.set_shutdown_token(cmd.value);
+            break;
+        case CMD_PROTECT_PID:
+            result = loader.protect_pid(cmd.target_pid, cmd.value);
+            break;
+        case CMD_UNPROTECT_PID:
+            result = loader.unprotect_pid(cmd.target_pid);
+            break;
+        case CMD_REGISTER_INODE:
+            result = loader.register_inode(cmd.target_cgroup_id, cmd.target_pid);
+            break;
         default:
             std::fprintf(stderr, "[xsypher] WARNING: unknown policy cmd %u\n",
                          cmd.cmd_type);
@@ -400,6 +418,12 @@ int main(int argc, char** argv) {
             const std::uint64_t now = monotonic_ms();
             if (now - last_status >= static_cast<std::uint64_t>(kStatusIntervalMs)) {
                 report_status(ctx, loader, server, resolver);
+                // Mirror the kernel's ring-buffer drop counter into config_map
+                // so the BPF fail-closed check can react to consumer stalls.
+                const std::vector<std::uint64_t> metrics = loader.read_metrics();
+                if (metrics.size() > METRIC_RINGBUF_DROPS) {
+                    loader.update_ringbuf_drops(metrics[METRIC_RINGBUF_DROPS]);
+                }
                 last_status = now;
             }
         }

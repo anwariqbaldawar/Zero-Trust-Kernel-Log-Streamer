@@ -60,6 +60,11 @@ SHELL_BASENAMES: Final[frozenset[str]] = frozenset(
     {"sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "busybox"}
 )
 
+#: Binaries an AI agent must never execute directly (the in-kernel restricted
+#: set).  The collector registers their inode+device fingerprint; the engine
+#: uses this set for the basename fallback when a fingerprint is unavailable.
+RESTRICTED_SHELL_BASENAMES: Final[frozenset[str]] = frozenset(SHELL_BASENAMES)
+
 #: Terminal multiplexers used to persist an interactive foothold.
 MULTIPLEXER_BASENAMES: Final[frozenset[str]] = frozenset(
     {"tmux", "screen", "dtach", "abduco"}
@@ -114,6 +119,18 @@ def is_ai_runtime(name: str) -> bool:
     return any(lowered.startswith(prefix) for prefix in ("python3", "node", "mcp"))
 
 
+def is_restricted_shell(name: str) -> bool:
+    """True when ``name`` (basename or comm) is a restricted shell binary."""
+    lowered = name.lower()
+    if not lowered:
+        return False
+    if lowered in RESTRICTED_SHELL_BASENAMES:
+        return True
+    # versioned / suffixed shells: "python3.12-sh" is not a shell, but
+    # "busybox-sh" or "ash" style wrappers are covered by the prefix rule.
+    return any(lowered.endswith(suffix) for suffix in ("sh", "ash"))
+
+
 @dataclass(slots=True)
 class ProcessNode:
     """One tracked process.
@@ -139,6 +156,12 @@ class ProcessNode:
     exit_seen: bool = False
     children: set[int] = field(default_factory=set)
     exec_count: int = 0
+    # ABI v3 in-kernel enforcement context.
+    target_ino: int = 0
+    target_dev: int = 0
+    lineage_root_pid: int = 0
+    lineage_flags: int = 0
+    enforced_inline: int = 0
 
     @property
     def name(self) -> str:
@@ -169,6 +192,11 @@ class ProcessNode:
             "net_ns": self.net_ns,
             "start_time": self.start_time,
             "exec_count": self.exec_count,
+            "target_ino": self.target_ino,
+            "target_dev": self.target_dev,
+            "lineage_root_pid": self.lineage_root_pid,
+            "lineage_flags": self.lineage_flags,
+            "enforced_inline": self.enforced_inline,
         }
 
     def to_row(self) -> str:
@@ -314,6 +342,18 @@ class LineageGraph:
             node.exit_seen = False
             self._exited.pop(pid, None)
 
+        # ABI v3: refresh the in-kernel enforcement context.
+        if event.target_ino:
+            node.target_ino = event.target_ino
+        if event.target_dev:
+            node.target_dev = event.target_dev
+        if event.lineage_root_pid:
+            node.lineage_root_pid = event.lineage_root_pid
+        if event.lineage_flags:
+            node.lineage_flags = event.lineage_flags
+        if event.enforced_inline:
+            node.enforced_inline = event.enforced_inline
+
         node.last_seen = now
         self._nodes.move_to_end(pid)
         return node
@@ -424,7 +464,9 @@ __all__ = [
     "MULTIPLEXER_BASENAMES",
     "NETWORK_TOOL_BASENAMES",
     "ProcessNode",
+    "RESTRICTED_SHELL_BASENAMES",
     "SHELL_BASENAMES",
     "basename",
     "is_ai_runtime",
+    "is_restricted_shell",
 ]

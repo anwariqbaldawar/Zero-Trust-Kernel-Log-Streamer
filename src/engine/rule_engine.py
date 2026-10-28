@@ -35,7 +35,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Final, Iterable, Mapping, Sequence
 
-from .abi import Event, EventType
+from .abi import BlockReason, Event, EventType
 from .lineage import LineageGraph, basename, is_ai_runtime
 
 SEVERITIES: Final[tuple[str, ...]] = ("info", "low", "medium", "high", "critical")
@@ -74,6 +74,9 @@ _KNOWN_CONDITIONS: Final[frozenset[str]] = frozenset(
         "ancestor_min_depth",
         "monitor_only",
         "any_of",
+        "exe_ino_in",
+        "block_reason_in",
+        "enforced_inline",
     }
 )
 
@@ -176,6 +179,9 @@ class ConditionGroup:
     ancestor_any_in: frozenset[str] = frozenset()
     ancestor_min_depth: int = 0
     monitor_only: bool = False
+    exe_ino_in: frozenset[int] = frozenset()
+    block_reason_in: frozenset[int] = frozenset()
+    enforced_inline: bool = False
 
     def evaluate(self, event: Event, exe: str, comm: str,
                  ancestry: Sequence[str]) -> str | None:
@@ -235,6 +241,13 @@ class ConditionGroup:
             if not any(is_ai_runtime(name) for name in ancestry):
                 return None
 
+        if self.exe_ino_in and event.target_ino not in self.exe_ino_in:
+            return None
+        if self.block_reason_in and event.open_flags not in self.block_reason_in:
+            return None
+        if self.enforced_inline and not event.enforced_inline:
+            return None
+
         return "matched"
 
     @classmethod
@@ -274,6 +287,9 @@ class ConditionGroup:
                 ancestor_any_in=lowered(raw.get("ancestor_any_in")),
                 ancestor_min_depth=int(raw.get("ancestor_min_depth", 0) or 0),
                 monitor_only=bool(raw.get("monitor_only", False)),
+                exe_ino_in=frozenset(_as_int_list(raw.get("exe_ino_in"))),
+                block_reason_in=frozenset(_as_int_list(raw.get("block_reason_in"))),
+                enforced_inline=bool(raw.get("enforced_inline", False)),
             )
         except KeyError as exc:  # unknown event type name
             raise RuleError(f"{where}: unknown event type {exc}") from exc
@@ -328,6 +344,8 @@ class RuleSpec:
             parts.append(f"path={event.filename or '?'}")
         elif event.event_type == EventType.LSM_BLOCK:
             parts.append(f"lsm_denied={event.filename or '?'}")
+        elif event.event_type == EventType.ENFORCED_INLINE:
+            parts.append(f"inline_block={BlockReason.name(event.open_flags)}")
         if event.container_id and event.container_id != "host":
             parts.append(f"container={event.container_id[:12]}")
         if group_index >= 0:

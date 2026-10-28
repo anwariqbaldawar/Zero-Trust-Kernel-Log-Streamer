@@ -54,7 +54,7 @@ sys.path.insert(0, "/src/src")
 from engine import abi
 sizes = (ctypes.sizeof(abi.KernelEvent), ctypes.sizeof(abi.WireEventMsg),
          ctypes.sizeof(abi.WirePolicyCmd))
-assert sizes == (640, 720, 32), sizes
+assert sizes == (656, 736, 32), sizes
 print("abi ok:", sizes)
 PY
 

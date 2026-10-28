@@ -28,7 +28,7 @@ $ ./scripts/verify_and_benchmark.sh
 - [ ] `make test` passes (positive **and** negative case added for new detections)
 - [ ] `./scripts/verify_and_benchmark.sh` passes
 - [ ] `include/xsypher_abi.h` and `src/engine/abi.py` still agree byte for byte
-      (sizes 640 / 720 / 32, offsets asserted in tests)
+      (sizes 656 / 736 / 32, offsets asserted in tests)
 - [ ] No `TODO`, `FIXME`, dead code, commented-out blocks or debug prints
 - [ ] No new runtime dependency (PyYAML remains the only non-stdlib package)
 - [ ] Kernel-facing code: bounded loops, checked helper returns, no pointer dereferences

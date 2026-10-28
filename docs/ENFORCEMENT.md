@@ -16,9 +16,16 @@ Two levels of state exist, and only one of them is a decision.
 |---|---|---|---|
 | Enforcement mode | `config_map[0]`, `u32` | `--enforce` at startup, `CMD_SET_ENFORCEMENT_MODE` | 0 audit only, 1 inline block |
 | Domain state | `quarantined_pids_map`, `quarantined_cgroups_map`, value `u8` | `CMD_QUARANTINE_PID`, `CMD_QUARANTINE_CGROUP`, and their inverses | 0 observe, 1 block |
+| Config | `config_map[0]`, `xsypher_config_t` | collector at startup, `CMD_SET_*` | enforcement mode, fail-closed, heartbeat age, shutdown token |
+| Protected PIDs | `protected_pids_map`, key `tgid` | `CMD_PROTECT_PID`, `CMD_UNPROTECT_PID` | guard a pid against task_kill |
+| Restricted inodes | `restricted_inodes_map`, key `(ino, dev)` | `CMD_REGISTER_INODE` | deny a re-registered binary by inode |
+| Runtime comms | `runtime_comms_map`, key comm | engine heartbeat, `CMD_SET_HEARTBEAT` | fail-closed liveness |
+| Blocked IPs | `blocked_ipv4_map`, key address | `CMD_BLOCK_IPV4`, `CMD_UNBLOCK_IPV4` | node-wide address block |
 
 A domain is denied when the mode is inline **and** either its cgroup id or its tgid maps to
 `QUARANTINE_BLOCK`. The cgroup check runs first, because it is the broader and more durable of the two.
+With `fail_closed` set, a domain is also denied when the engine heartbeat is stale and the process is a
+tracked AI lineage, whether or not it was previously quarantined.
 
 ```
                      ┌──────────────────────┐
@@ -98,8 +105,8 @@ reason the engine only emits the action from rules that identify infrastructure-
 Second, IMDS denial is domain-scoped: it needs both a quarantined domain and the metadata address, so a
 healthy workload that legitimately reads metadata is unaffected.
 
-IPv6 is not evaluated in this hook. `fd00:ec2::254` is handled by rule evaluation, which is after the
-connection attempt; see §7.
+IPv4-mapped IPv6 and the IPv6 metadata address `fd00:ec2::254` are denied inline here, before the
+connection attempt; see §7 for what remains a detection-only case.
 
 ### `lsm/file_open`
 
@@ -114,6 +121,33 @@ connection attempt; see §7.
 `-EACCES` rather than `-EPERM` is deliberate: it is the error a process normally sees for a permission
 problem, so a denied write inside a quarantined container looks like an ordinary EACCES to the workload
 and does not reveal the presence of the sensor.
+
+### `lsm/task_kill`
+
+| Aspect | Behaviour |
+|---|---|
+| Fires | on `sigkill` and `sigterm` (and `sigstop`, a stop rather than a terminate) |
+| Reads | `info->si_pid` (the target tgid) and the caller's cgroup |
+| Denies | `-EPERM` when the target is protected and the caller is neither its owning cgroup nor a task carrying the shutdown token |
+| Emits | `EVENT_LSM_BLOCK`, reason 10 (tamper kill) |
+| Counters | `METRIC_LSM_BLOCKS` |
+
+This is the hook that stops a compromised agent from killing the collector or the engine out from under
+the pipeline. `SIGKILL` cannot be trapped in user space, so the guard has to live in the kernel.
+
+### `lsm/bpf`
+
+| Aspect | Behaviour |
+|---|---|
+| Fires | on the BPF syscall for map create/update/delete, prog load and BTF load |
+| Reads | the `union bpf_attr` target map id or the requested program type |
+| Denies | `-EPERM` on a mutation whose map id belongs to xSypher, unless the task carries the shutdown token |
+| Emits | `EVENT_LSM_BLOCK`, reason 11 (tamper bpf) |
+| Counters | `METRIC_LSM_BLOCKS` |
+
+The kernel must permit the collector to load the program at startup, so the check excludes the loading
+task (the collector, which owns the maps) and denies everyone else. An unprivileged process that finds a
+map id cannot mutate policy state, block_ipv4 entries or the heartbeat map directly.
 
 ---
 

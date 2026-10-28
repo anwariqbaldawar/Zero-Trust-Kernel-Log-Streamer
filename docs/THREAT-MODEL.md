@@ -133,6 +133,10 @@ deployment, and what remains:
 | Forging telemetry to the engine | the engine only reads; a forged frame can raise a false alert but cannot remove policy |
 | Flushing policy by sending `UNQUARANTINE_*` | requires write access to the socket, which requires host access |
 | Editing the audit log | breaks the chain at the edited line and every subsequent line |
+| Mutating a policy map directly with the `BPF` syscall | `lsm/bpf` denies map mutations that touch an xSypher map id, unless the task carries the shutdown token |
+| Killing the collector or engine with `SIGKILL` | `lsm/task_kill` blocks `SIGKILL`, `SIGTERM` and `SIGTERM` against protected PIDs from outside their cgroup |
+| Surviving an engine kill or socket teardown | the engine heartbeats; a stale heartbeat makes the kernel fail closed and deny tracked AI lineages at the LSM hooks |
+| Unloading the BPF objects | requires `CAP_SYS_ADMIN`; a sensor is not an immutable boot chain |
 
 Residual risk: any process that can write to the socket can alter kernel policy. Treat socket access as
 equivalent to enforcement authority, and do not mount the directory into a workload.

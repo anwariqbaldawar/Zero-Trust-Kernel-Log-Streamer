@@ -8,7 +8,7 @@ The engine is the policy brain of the system:
 
 Responsibilities
 ----------------
-* decode binary telemetry frames (``wire_event_msg_t``, 720 bytes)
+* decode binary telemetry frames (``wire_event_msg_t``, 736 bytes)
 * maintain the process lineage graph
 * evaluate the declarative YAML rule set
 * push quarantine / IP-block commands back into the kernel maps
@@ -41,6 +41,7 @@ from typing import Callable, Deque, Iterable
 
 from .abi import (
     WIRE_EVENT_SIZE,
+    BlockReason,
     Event,
     EventType,
     PolicyCommand,
@@ -90,6 +91,10 @@ class EngineConfig:
     max_tracked: int = 200_000
     reconnect_interval: float = 1.0
     fsync_alerts: bool = False
+    fail_closed: bool = False
+    heartbeat_interval: float = 2.0
+    collector_timeout: float = 10.0
+    shutdown_token: int = 0
 
 
 def default_rules_path() -> str:
@@ -340,6 +345,10 @@ class Engine:
         self._started_at = time.monotonic()
         self._last_status = 0.0
         self._chain_ok = True
+        # Heartbeat / fail-closed bookkeeping.
+        self._last_heartbeat_ns = 0
+        self._heartbeat_task: asyncio.Task | None = None
+        self._collector_online = False
 
     # -- lifecycle --------------------------------------------------------- #
     async def start(self) -> None:
@@ -378,6 +387,20 @@ class Engine:
                             f"{self.config.metrics_port}/metrics",
                 collector_connected=True,
             )
+            self._collector_online = True
+            # Register the engine's own tgid with the collector so lsm/task_kill
+            # cannot terminate it, and apply the fail-closed policy if asked.
+            if self.transport is not None:
+                self.transport.send(
+                    PolicyCommand.protect_pid(os.getpid()).to_bytes()
+                )
+                if self.config.fail_closed:
+                    self.transport.send(
+                        PolicyCommand.set_fail_closed(True).to_bytes()
+                    )
+            self._heartbeat_task = asyncio.create_task(
+                self._heartbeat_loop(), name="xsypher-heartbeat"
+            )
 
         self.tui.good(
             f"loaded {len(self.rules.rules)} rules from {self.config.rules_path}; "
@@ -408,6 +431,14 @@ class Engine:
         self._stopping = True
         self.tui.info("stopping engine ...")
 
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except (asyncio.CancelledError, Exception):  # pragma: no cover
+                pass
+            self._heartbeat_task = None
+
         if self.transport is not None:
             # Best effort: release every quarantine we applied so a restart does
             # not leave the node in a locked-down state.
@@ -417,7 +448,23 @@ class Engine:
                     self.tui.info(f"released {released} kernel policy entries")
             except Exception as exc:  # pragma: no cover - defensive
                 self.tui.warn(f"failed to release policy entries: {exc}")
+            # Lift fail-closed and, if configured, arm the authenticated
+            # shutdown token so the protected collector can be stopped.
+            try:
+                if self.config.fail_closed:
+                    self.transport.send(
+                        PolicyCommand.set_fail_closed(False).to_bytes()
+                    )
+                if self.config.shutdown_token:
+                    self.transport.send(
+                        PolicyCommand.set_shutdown_token(
+                            self.config.shutdown_token
+                        ).to_bytes()
+                    )
+            except Exception as exc:  # pragma: no cover - defensive
+                self.tui.warn(f"failed to release kernel policy: {exc}")
             self.transport.close()
+            self._collector_online = False
 
         if self._consumer is not None:
             # Drain whatever is already queued, then cancel.
@@ -442,6 +489,25 @@ class Engine:
         else:
             await self._socket_loop(stop_event)
         await self.stop()
+
+    async def _heartbeat_loop(self) -> None:
+        """Publish a monotonic heartbeat into config_map on a fixed interval.
+
+        The collector records it in ``xsypher_config_t.last_heartbeat_ns``;
+        the BPF fail-closed check treats an expired heartbeat as "the agent is
+        gone" and denies tracked AI lineages at the LSM hooks.
+        """
+        interval = max(0.1, self.config.heartbeat_interval)
+        while True:
+            await asyncio.sleep(interval)
+            if self.transport is None or not self.transport.connected:
+                self._collector_online = False
+                continue
+            self._last_heartbeat_ns = time.monotonic_ns()
+            self._collector_online = True
+            self.transport.send(
+                PolicyCommand.set_heartbeat(self._last_heartbeat_ns).to_bytes()
+            )
 
     async def _socket_loop(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
@@ -473,6 +539,10 @@ class Engine:
     def _refresh_gauges(self) -> None:
         self.metrics.set("xsypher_active_tracked_processes", len(self.lineage))
         self.metrics.set("xsypher_rule_cooldowns_active", self.rules.cooldown_entries)
+        if self._last_heartbeat_ns:
+            age = max(0.0, (time.monotonic_ns() - self._last_heartbeat_ns) / 1e9)
+            self.metrics.set("xsypher_collector_heartbeat_age_seconds", age)
+        self.metrics.set("xsypher_collector_status", 1 if self._collector_online else 0)
 
     def _maybe_status(self) -> None:
         now = time.monotonic()
@@ -569,6 +639,10 @@ class Engine:
         self.lineage.observe(event)
         if event.event_type == EventType.LSM_BLOCK:
             self.metrics.inc("xsypher_lsm_blocks_seen", {"type": "lsm_block"})
+        if event.event_type == EventType.ENFORCED_INLINE:
+            self.metrics.inc("xsypher_enforced_inline_events_total",
+                             {"reason": BlockReason.name(event.open_flags)})
+            self.metrics.inc("xsypher_lsm_blocks_seen", {"type": "enforced_inline"})
 
         started = time.perf_counter()
         matches = self.rules.evaluate(event, self.lineage)
@@ -784,6 +858,16 @@ def build_parser() -> argparse.ArgumentParser:
                         help="maximum processes tracked in the lineage graph")
     parser.add_argument("--fsync-alerts", action="store_true",
                         help="fsync the alert log after every record")
+    parser.add_argument("--fail-closed", action="store_true",
+                        help="arm kernel fail-closed when the agent heartbeat expires")
+    parser.add_argument("--heartbeat-interval", type=float, default=2.0,
+                        help="seconds between collector heartbeats")
+    parser.add_argument("--collector-timeout", type=float, default=10.0,
+                        help="seconds without a heartbeat before the collector is "
+                             "considered dead")
+    parser.add_argument("--shutdown-token", type=int, default=0,
+                        help="authenticated token that lifts collector self-protection "
+                             "on shutdown (0 = do not send)")
     parser.add_argument("--no-color", action="store_true", help="disable ANSI colour")
     parser.add_argument("--quiet", action="store_true",
                         help="only print alerts, not every telemetry line")
@@ -815,6 +899,10 @@ def config_from_args(argv: list[str] | None = None) -> EngineConfig:
         lineage_ttl=args.lineage_ttl,
         max_tracked=args.max_tracked,
         fsync_alerts=args.fsync_alerts,
+        fail_closed=args.fail_closed,
+        heartbeat_interval=args.heartbeat_interval,
+        collector_timeout=args.collector_timeout,
+        shutdown_token=args.shutdown_token,
     )
     if warning:
         print(f"[xsypher] WARNING: {warning}", file=sys.stderr)

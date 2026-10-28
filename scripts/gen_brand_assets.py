@@ -108,7 +108,7 @@ def banner() -> str:
   <text x="250" y="192" font-family="{FONT}" font-size="22" fill="{MUTED_DARK}">Kernel-level zero-trust enforcement for AI agent hosts</text>
   <line x1="250" y1="216" x2="1208" y2="216" stroke="#1e293b" stroke-width="1"/>
   <text x="250" y="248" font-family="{MONO}" font-size="15" fill="{MUTED_DARK}">eBPF CO-RE tracepoints  ->  16 MiB ring buffer  ->  C++20 collector  ->  Python engine  ->  BPF LSM deny</text>
-  <text x="250" y="278" font-family="{MONO}" font-size="15" fill="{BLUE_SOFT}">5 tracepoints  ·  3 LSM hooks  ·  6 rules  ·  wire ABI v2  ·  640 / 720 / 32 bytes</text>
+  <text x="250" y="278" font-family="{MONO}" font-size="15" fill="{BLUE_SOFT}">5 tracepoints  ·  5 LSM hooks  ·  6 rules  ·  wire ABI v3  ·  656 / 736 / 32 bytes</text>
 </svg>
 """
 

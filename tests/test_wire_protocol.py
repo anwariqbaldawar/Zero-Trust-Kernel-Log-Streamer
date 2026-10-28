@@ -40,12 +40,12 @@ from engine.main import UdsTransport  # noqa: E402
 
 class TestStructLayout(unittest.TestCase):
     def test_kernel_event_size(self) -> None:
-        self.assertEqual(ctypes.sizeof(abi.KernelEvent), 640)
-        self.assertEqual(abi.KERNEL_EVENT_SIZE, 640)
+        self.assertEqual(ctypes.sizeof(abi.KernelEvent), 656)
+        self.assertEqual(abi.KERNEL_EVENT_SIZE, 656)
 
     def test_wire_event_size(self) -> None:
-        self.assertEqual(ctypes.sizeof(abi.WireEventMsg), 720)
-        self.assertEqual(abi.WIRE_EVENT_SIZE, 720)
+        self.assertEqual(ctypes.sizeof(abi.WireEventMsg), 736)
+        self.assertEqual(abi.WIRE_EVENT_SIZE, 736)
 
     def test_policy_cmd_size(self) -> None:
         self.assertEqual(ctypes.sizeof(abi.WirePolicyCmd), 32)
@@ -77,6 +77,11 @@ class TestStructLayout(unittest.TestCase):
             "parent_comm": 108,
             "filename": 124,
             "args": 380,
+            "target_ino": 636,
+            "target_dev": 640,
+            "lineage_root_pid": 644,
+            "lineage_flags": 648,
+            "enforced_inline": 652,
         }
         for name, offset in expected.items():
             with self.subTest(field=name):
@@ -98,10 +103,11 @@ class TestStructLayout(unittest.TestCase):
         self.assertEqual(abi.WirePolicyCmd.target_pid.offset, 16)
         self.assertEqual(abi.WirePolicyCmd.target_ipv4.offset, 20)
         self.assertEqual(abi.WirePolicyCmd.enforcement_mode.offset, 24)
+        self.assertEqual(abi.WirePolicyCmd.value.offset, 28)
 
     def test_constants_match_header(self) -> None:
         self.assertEqual(abi.XSYPHER_WIRE_MAGIC, 0x58535950)
-        self.assertEqual(abi.XSYPHER_ABI_VERSION, 2)
+        self.assertEqual(abi.XSYPHER_ABI_VERSION, 3)
         self.assertEqual(abi.MAX_COMM_LEN, 16)
         self.assertEqual(abi.MAX_PATH_LEN, 256)
         self.assertEqual(abi.MAX_ARGS_LEN, 256)
@@ -140,15 +146,21 @@ int main(void)
            sizeof(struct kernel_event_t),
            sizeof(struct wire_event_msg_t),
            sizeof(struct wire_policy_cmd_t));
-    printf("offsets %zu %zu %zu %zu %zu %zu %zu %zu\n",
+    printf("offsets %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu\n",
            offsetof(struct kernel_event_t, event_type),
            offsetof(struct kernel_event_t, daddr_v4),
            offsetof(struct kernel_event_t, filename),
            offsetof(struct kernel_event_t, args),
+           offsetof(struct kernel_event_t, target_ino),
+           offsetof(struct kernel_event_t, target_dev),
+           offsetof(struct kernel_event_t, lineage_root_pid),
+           offsetof(struct kernel_event_t, lineage_flags),
+           offsetof(struct kernel_event_t, enforced_inline),
            offsetof(struct wire_event_msg_t, container_id),
            offsetof(struct wire_event_msg_t, event),
            offsetof(struct wire_policy_cmd_t, target_ipv4),
-           offsetof(struct wire_policy_cmd_t, enforcement_mode));
+           offsetof(struct wire_policy_cmd_t, enforcement_mode),
+           offsetof(struct wire_policy_cmd_t, value));
     printf("constants %u %u %u\n",
            XSYPHER_WIRE_MAGIC, XSYPHER_ABI_VERSION, XSYPHER_IMDS_IPV4_RAW);
     return 0;
@@ -189,10 +201,16 @@ int main(void)
                 abi.KernelEvent.daddr_v4.offset,
                 abi.KernelEvent.filename.offset,
                 abi.KernelEvent.args.offset,
+                abi.KernelEvent.target_ino.offset,
+                abi.KernelEvent.target_dev.offset,
+                abi.KernelEvent.lineage_root_pid.offset,
+                abi.KernelEvent.lineage_flags.offset,
+                abi.KernelEvent.enforced_inline.offset,
                 abi.WireEventMsg.container_id.offset,
                 abi.WireEventMsg.event.offset,
                 abi.WirePolicyCmd.target_ipv4.offset,
                 abi.WirePolicyCmd.enforcement_mode.offset,
+                abi.WirePolicyCmd.value.offset,
             ],
         )
 
@@ -236,7 +254,7 @@ class TestWireCodec(unittest.TestCase):
     def test_round_trip(self) -> None:
         event = self.make_event()
         frame = abi.encode_wire_frame(event, seq_no=7, container_id="c" * 64)
-        self.assertEqual(len(frame), 720)
+        self.assertEqual(len(frame), 736)
         decoded = abi.decode_wire_frame(frame)
 
         self.assertTrue(decoded.valid)
@@ -259,6 +277,48 @@ class TestWireCodec(unittest.TestCase):
         decoded = abi.decode_wire_frame(abi.encode_wire_frame(event))
         self.assertEqual(decoded.event.daddr_v6, "fd00:ec2::254")
         self.assertEqual(decoded.event.daddr_v4, "")
+
+    def test_enforced_inline_event_round_trip(self) -> None:
+        event = self.make_event(
+            event_type=abi.EventType.ENFORCED_INLINE,
+            blocked_by_lsm=1,
+            enforced_inline=1,
+            open_flags=abi.BlockReason.RESTRICTED_INODE,
+            target_ino=0x12345678,
+            target_dev=0x80,
+            lineage_root_pid=4242,
+            lineage_flags=abi.LINEAGE_FLAG_AI_RUNTIME | abi.LINEAGE_FLAG_QUARANTINE,
+        )
+        decoded = abi.decode_wire_frame(abi.encode_wire_frame(event))
+        self.assertEqual(decoded.event.event_type, abi.EventType.ENFORCED_INLINE)
+        self.assertEqual(decoded.event.enforced_inline, 1)
+        self.assertEqual(decoded.event.open_flags, abi.BlockReason.RESTRICTED_INODE)
+        self.assertEqual(decoded.event.target_ino, 0x12345678)
+        self.assertEqual(decoded.event.target_dev, 0x80)
+        self.assertEqual(decoded.event.lineage_root_pid, 4242)
+        self.assertEqual(
+            decoded.event.lineage_flags,
+            abi.LINEAGE_FLAG_AI_RUNTIME | abi.LINEAGE_FLAG_QUARANTINE,
+        )
+
+    def test_control_plane_commands_round_trip(self) -> None:
+        commands = [
+            abi.PolicyCommand.set_heartbeat(1_700_000_000_000_000_000),
+            abi.PolicyCommand.set_fail_closed(True),
+            abi.PolicyCommand.set_shutdown_token(0xC0FFEE),
+            abi.PolicyCommand.protect_pid(4242, token=0x1234),
+            abi.PolicyCommand.unprotect_pid(4242),
+            abi.PolicyCommand.register_inode(0x12345678, 0x80),
+        ]
+        for command in commands:
+            with self.subTest(command=command.name):
+                payload = command.to_bytes()
+                self.assertEqual(len(payload), abi.POLICY_CMD_SIZE)
+                decoded = abi.PolicyCommand.from_bytes(payload)
+                self.assertEqual(decoded.cmd_type, command.cmd_type)
+                self.assertEqual(decoded.target_pid, command.target_pid)
+                self.assertEqual(decoded.target_cgroup_id, command.target_cgroup_id)
+                self.assertEqual(decoded.value, command.value)
 
     def test_long_strings_are_truncated_not_corrupted(self) -> None:
         event = self.make_event(filename="/" + "a" * 400, args="x" * 400)
@@ -317,7 +377,7 @@ class TestWireCodec(unittest.TestCase):
         magic, version, cmd_type = struct.unpack_from("<IHH", payload, 0)
         (target_ipv4,) = struct.unpack_from("<I", payload, 20)
         self.assertEqual(magic, abi.XSYPHER_WIRE_MAGIC)
-        self.assertEqual(version, 2)
+        self.assertEqual(version, 3)
         self.assertEqual(cmd_type, abi.CmdType.BLOCK_IPV4)
         self.assertEqual(target_ipv4, 0xFEA9FEA9)
 

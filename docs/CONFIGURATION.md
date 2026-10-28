@@ -44,6 +44,9 @@ see [DETECTIONS.md](DETECTIONS.md); for what each action does in the kernel, see
 | `--metrics-port <port>` | `9109` | Prometheus exporter port; `0` selects an ephemeral port. |
 | `--enforce-kernel` | off | Send `QUARANTINE_*` and `BLOCK_IPV4` commands to the collector. Without it the engine is audit-only. |
 | `--active-kill` | off | Additionally send `SIGKILL` to the offending process from user space. |
+| `--heartbeat-interval <seconds>` | `2.0` | How often the engine pushes a heartbeat command to the collector. A stale heartbeat is what enables fail-closed. |
+| `--fail-closed-seconds <n>` | `0` | When set, the engine declares a failure window of `n` seconds; past it the kernel denies tracked AI lineages if heartbeats stop. `0` disables the declaration. |
+| `--shutdown-token <token>` | unset | Authenticated token that lifts task_kill and bpf tamper protection. Required to stop a protected PID from user space. |
 | `--simulate` | off | Synthetic event generator; requires no kernel access and no privileges. |
 | `--simulate-count <n>` | `0` | Stop after `n` synthetic events; `0` runs indefinitely. |
 | `--simulate-seed <n>` | `1337` | Seed for the synthetic generator. |
@@ -157,6 +160,10 @@ Recognised AI/MCP runtimes: `node`, `nodejs`, `deno`, `bun`, `python`, `python3`
 | `block_ipv4` | `CMD_BLOCK_IPV4` for the destination address (falls back to the IMDS address if the event has none) | collector, then `blocked_ipv4_map` |
 | `block_imds` | `CMD_BLOCK_IPV4` for `169.254.169.254` | collector, then `blocked_ipv4_map` |
 | `kill` | `SIGKILL` to the subject tgid | user space; only with `--active-kill` |
+| `protect` | `PROTECT_PID` for the subject tgid | collector map write; guards the pid against task_kill |
+| `fail_closed` | `SET_FAIL_CLOSED` with the declared window | collector map write; enables kernel fail-closed |
+| `shutdown_token` | `SET_SHUTDOWN_TOKEN` with the configured token | collector map write; lifts tamper protection |
+| `register_inode` | `REGISTER_INODE` for a path resolved in user space | collector map write; binds an inode to the restricted set |
 
 Enforcement requires `--enforce-kernel` on the engine and `INLINE_BLOCK` mode in `config_map`.
 

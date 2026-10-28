@@ -4,6 +4,8 @@
 #include "bpf_loader.hpp"
 
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <cstdarg>
 #include <cstdio>
@@ -23,6 +25,8 @@ constexpr const char* kLsmPrograms[] = {
     "xsypher_lsm_bprm_check",
     "xsypher_lsm_socket_connect",
     "xsypher_lsm_file_open",
+    "xsypher_lsm_task_kill",
+    "xsypher_lsm_bpf",
 };
 
 bool is_lsm_related(const std::string& error) {
@@ -47,6 +51,35 @@ std::string errno_text(int err) {
     std::snprintf(buffer, sizeof(buffer), "%s (%d)", text ? text : "unknown", err);
     return std::string(buffer);
 }
+
+/// Read-modify-write helpers for the single-entry config_map (ABI v3).
+bool read_config(int fd, xsypher_config_t& out) {
+    std::uint32_t key = 0;
+    return bpf_map_lookup_elem(fd, &key, &out) == 0;
+}
+
+bool write_config(int fd, const xsypher_config_t& config) {
+    std::uint32_t key = 0;
+    return bpf_map_update_elem(fd, &key, const_cast<xsypher_config_t*>(&config),
+                               BPF_ANY) == 0;
+}
+
+/// AI/MCP runtime comm names mirroring engine/lineage.py:AI_RUNTIME_BASENAMES.
+constexpr const char* kRuntimeComms[] = {
+    "mcp-server", "claude-mcp", "mcp", "node", "nodejs", "deno", "bun",
+    "python", "python3", "uvicorn", "gunicorn", "hypercorn", "fastapi",
+    "npx", "ollama", "llama-server", "vllm",
+};
+
+/// Shell / interpreter binaries whose inode+device fingerprint is registered
+/// so an AI lineage cannot execute a renamed copy of them.
+constexpr const char* kRestrictedShellPaths[] = {
+    "/bin/sh", "/bin/bash", "/bin/dash", "/bin/zsh", "/bin/ksh",
+    "/bin/fish", "/bin/csh", "/bin/tcsh", "/bin/busybox",
+    "/usr/bin/sh", "/usr/bin/bash", "/usr/bin/dash", "/usr/bin/zsh",
+    "/usr/bin/ksh", "/usr/bin/fish", "/usr/bin/csh", "/usr/bin/tcsh",
+    "/usr/bin/busybox",
+};
 
 }  // namespace
 
@@ -281,17 +314,24 @@ void BpfLoader::apply_runtime_defaults_locked() {
         return;
     }
 
+    // 1. Initialise the ABI v3 control block (config_map[0] =
+    //    struct xsypher_config_t).  The BPF program reads this on every hook.
     const int config_fd = bpf_map__fd(skel_->maps.config_map);
     if (config_fd >= 0) {
-        const std::uint32_t key = 0;
-        const std::uint32_t mode = options_.enforce_inline ? ENFORCEMENT_INLINE_BLOCK
-                                                           : ENFORCEMENT_AUDIT_ONLY;
-        if (bpf_map_update_elem(config_fd, &key, &mode, BPF_ANY) != 0) {
-            std::fprintf(stderr, "[xsypher] WARNING: cannot set enforcement mode: %s\n",
+        xsypher_config_t config{};
+        config.enforcement_mode = options_.enforce_inline ? ENFORCEMENT_INLINE_BLOCK
+                                                          : ENFORCEMENT_AUDIT_ONLY;
+        config.fail_closed_enabled = 0;
+        config.heartbeat_timeout_ns = 5ull * 1000000000ull;  // 5 s grace
+        config.ringbuf_drop_threshold = 4096;
+        config.shutdown_token = 0;
+        if (!write_config(config_fd, config)) {
+            std::fprintf(stderr, "[xsypher] WARNING: cannot initialise config_map: %s\n",
                          errno_text(errno).c_str());
         }
     }
 
+    // 2. Pre-block the IMDS address when requested.
     if (options_.block_imds) {
         const int ip_fd = bpf_map__fd(skel_->maps.blocked_ipv4_map);
         const std::uint32_t key = XSYPHER_IMDS_IPV4_RAW;
@@ -301,6 +341,27 @@ void BpfLoader::apply_runtime_defaults_locked() {
                          errno_text(errno).c_str());
         }
     }
+
+    // 3. Register AI/MCP runtime comm names so the kernel can mark the root
+    //    of an AI lineage when it execs one of them.
+    for (const char* comm : kRuntimeComms) {
+        register_runtime_comm_locked(comm);
+    }
+
+    // 4. Register the composite inode+device fingerprints of the known shell
+    //    / interpreter binaries (survives cp / rename / hardlink).
+    for (const char* path : kRestrictedShellPaths) {
+        struct stat st {};
+        if (::stat(path, &st) != 0) {
+            continue;
+        }
+        register_inode_locked(static_cast<std::uint64_t>(st.st_ino),
+                              static_cast<std::uint32_t>(st.st_dev));
+    }
+
+    // 5. Protect the collector's own thread-group id so lsm/task_kill cannot
+    //    terminate it before an authenticated shutdown token is supplied.
+    protect_pid_locked(static_cast<std::uint32_t>(::getpid()), 0);
 }
 
 void BpfLoader::unload() {
@@ -432,15 +493,266 @@ MapResult BpfLoader::set_enforcement_mode(std::uint32_t mode) {
     if (mode > ENFORCEMENT_INLINE_BLOCK) {
         mode = ENFORCEMENT_INLINE_BLOCK;
     }
-    std::uint32_t key = 0;
-    std::uint32_t value = mode;
-    if (bpf_map_update_elem(fd, &key, &value, BPF_ANY) != 0) {
+    xsypher_config_t config{};
+    if (!read_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    config.enforcement_mode = mode;
+    if (!write_config(fd, config)) {
         result.err = errno;
         result.message = std::string("config_map: ") + errno_text(result.err);
         return result;
     }
     result.ok = true;
     result.message = "config_map: enforcement_mode=" + std::to_string(mode);
+    return result;
+}
+
+MapResult BpfLoader::set_heartbeat(std::uint64_t heartbeat_ns) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    MapResult result;
+    if (!skel_) {
+        result.err = ENODEV;
+        result.message = "skeleton not loaded";
+        return result;
+    }
+    const int fd = bpf_map__fd(skel_->maps.config_map);
+    if (fd < 0) {
+        result.err = EBADF;
+        result.message = "config_map not available";
+        return result;
+    }
+    xsypher_config_t config{};
+    if (!read_config(fd, config) || !write_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    config.last_heartbeat_ns = heartbeat_ns;
+    if (!write_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    result.ok = true;
+    result.message = "config_map: heartbeat updated";
+    return result;
+}
+
+MapResult BpfLoader::set_fail_closed(bool enabled) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    MapResult result;
+    if (!skel_) {
+        result.err = ENODEV;
+        result.message = "skeleton not loaded";
+        return result;
+    }
+    const int fd = bpf_map__fd(skel_->maps.config_map);
+    if (fd < 0) {
+        result.err = EBADF;
+        result.message = "config_map not available";
+        return result;
+    }
+    xsypher_config_t config{};
+    if (!read_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    config.fail_closed_enabled = enabled ? 1u : 0u;
+    if (!write_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    result.ok = true;
+    result.message = "config_map: fail_closed=" + std::string(enabled ? "on" : "off");
+    return result;
+}
+
+MapResult BpfLoader::set_shutdown_token(std::uint32_t token) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    MapResult result;
+    if (!skel_) {
+        result.err = ENODEV;
+        result.message = "skeleton not loaded";
+        return result;
+    }
+    const int fd = bpf_map__fd(skel_->maps.config_map);
+    if (fd < 0) {
+        result.err = EBADF;
+        result.message = "config_map not available";
+        return result;
+    }
+    xsypher_config_t config{};
+    if (!read_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    config.shutdown_token = token;
+    if (!write_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    result.ok = true;
+    result.message = "config_map: shutdown_token set";
+    return result;
+}
+
+MapResult BpfLoader::protect_pid(std::uint32_t tgid, std::uint32_t token) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return protect_pid_locked(tgid, token);
+}
+
+MapResult BpfLoader::protect_pid_locked(std::uint32_t tgid, std::uint32_t token) {
+    MapResult result;
+    if (!skel_) {
+        result.err = ENODEV;
+        result.message = "skeleton not loaded";
+        return result;
+    }
+    const int fd = bpf_map__fd(skel_->maps.protected_pids_map);
+    if (fd < 0) {
+        result.err = EBADF;
+        result.message = "protected_pids_map not available";
+        return result;
+    }
+    protected_entry_t entry{};
+    entry.token = token;
+    entry.is_protected = 1;
+    if (bpf_map_update_elem(fd, &tgid, &entry, BPF_ANY) != 0) {
+        result.err = errno;
+        result.message = std::string("protected_pids_map: ") + errno_text(result.err);
+        return result;
+    }
+    result.ok = true;
+    result.message = "protected_pids_map: protected pid " + std::to_string(tgid);
+    return result;
+}
+
+MapResult BpfLoader::unprotect_pid(std::uint32_t tgid) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    MapResult result;
+    if (!skel_) {
+        result.err = ENODEV;
+        result.message = "skeleton not loaded";
+        return result;
+    }
+    const int fd = bpf_map__fd(skel_->maps.protected_pids_map);
+    if (fd < 0) {
+        result.err = EBADF;
+        result.message = "protected_pids_map not available";
+        return result;
+    }
+    if (bpf_map_delete_elem(fd, &tgid) != 0 && errno != ENOENT) {
+        result.err = errno;
+        result.message = std::string("protected_pids_map: ") + errno_text(result.err);
+        return result;
+    }
+    result.ok = true;
+    result.message = "protected_pids_map: unprotected pid " + std::to_string(tgid);
+    return result;
+}
+
+MapResult BpfLoader::register_runtime_comm(const char* comm) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return register_runtime_comm_locked(comm);
+}
+
+MapResult BpfLoader::register_runtime_comm_locked(const char* comm) {
+    MapResult result;
+    if (!skel_ || comm == nullptr) {
+        result.err = ENODEV;
+        result.message = "skeleton not loaded";
+        return result;
+    }
+    const int fd = bpf_map__fd(skel_->maps.runtime_comms_map);
+    if (fd < 0) {
+        result.err = EBADF;
+        result.message = "runtime_comms_map not available";
+        return result;
+    }
+    char key[MAX_COMM_LEN] = {};
+    std::size_t len = std::strlen(comm);
+    if (len >= MAX_COMM_LEN) {
+        len = MAX_COMM_LEN - 1;
+    }
+    std::memcpy(key, comm, len);
+    const std::uint8_t value = 1;
+    if (bpf_map_update_elem(fd, key, &value, BPF_ANY) != 0) {
+        result.err = errno;
+        result.message = std::string("runtime_comms_map: ") + errno_text(result.err);
+        return result;
+    }
+    result.ok = true;
+    result.message = std::string("runtime_comms_map: registered ") + comm;
+    return result;
+}
+
+MapResult BpfLoader::register_inode(std::uint64_t ino, std::uint32_t dev) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return register_inode_locked(ino, dev);
+}
+
+MapResult BpfLoader::register_inode_locked(std::uint64_t ino, std::uint32_t dev) {
+    MapResult result;
+    if (!skel_) {
+        result.err = ENODEV;
+        result.message = "skeleton not loaded";
+        return result;
+    }
+    const int fd = bpf_map__fd(skel_->maps.restricted_inodes_map);
+    if (fd < 0) {
+        result.err = EBADF;
+        result.message = "restricted_inodes_map not available";
+        return result;
+    }
+    inode_key_t key{};
+    key.ino = ino;
+    key.dev = dev;
+    const std::uint8_t value = 1;
+    if (bpf_map_update_elem(fd, &key, &value, BPF_ANY) != 0) {
+        result.err = errno;
+        result.message = std::string("restricted_inodes_map: ") + errno_text(result.err);
+        return result;
+    }
+    result.ok = true;
+    result.message = "restricted_inodes_map: registered inode " + std::to_string(ino);
+    return result;
+}
+
+MapResult BpfLoader::update_ringbuf_drops(std::uint64_t drops) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    MapResult result;
+    if (!skel_) {
+        result.err = ENODEV;
+        result.message = "skeleton not loaded";
+        return result;
+    }
+    const int fd = bpf_map__fd(skel_->maps.config_map);
+    if (fd < 0) {
+        result.err = EBADF;
+        result.message = "config_map not available";
+        return result;
+    }
+    xsypher_config_t config{};
+    if (!read_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    config.ringbuf_drops = drops;
+    if (!write_config(fd, config)) {
+        result.err = errno;
+        result.message = std::string("config_map: ") + errno_text(result.err);
+        return result;
+    }
+    result.ok = true;
+    result.message = "config_map: ringbuf_drops updated";
     return result;
 }
 

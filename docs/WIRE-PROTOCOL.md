@@ -12,8 +12,8 @@ Three structures, all `packed, aligned(8)`, all integers little-endian:
 
 | Structure | Size | Direction | Transport |
 |---|---|---|---|
-| `struct kernel_event_t` | 640 B | kernel to collector | `BPF_MAP_TYPE_RINGBUF`, 16 MiB |
-| `struct wire_event_msg_t` | 720 B | collector to engine | `AF_UNIX` / `SOCK_SEQPACKET`, one datagram |
+| `struct kernel_event_t` | 656 B | kernel to collector | `BPF_MAP_TYPE_RINGBUF`, 16 MiB |
+| `struct wire_event_msg_t` | 736 B | collector to engine | `AF_UNIX` / `SOCK_SEQPACKET`, one datagram |
 | `struct wire_policy_cmd_t` | 32 B | engine to collector | `AF_UNIX` / `SOCK_SEQPACKET`, one datagram |
 
 ---
@@ -32,7 +32,7 @@ Three structures, all `packed, aligned(8)`, all integers little-endian:
 
 ---
 
-## 2. `struct kernel_event_t`, 640 bytes
+## 2. `struct kernel_event_t`, 656 bytes
 
 | Offset | Size | Field | Notes |
 |---|---|---|---|
@@ -61,24 +61,31 @@ Three structures, all `packed, aligned(8)`, all integers little-endian:
 | 108 | 16 | `parent_comm` | NUL terminated |
 | 124 | 256 | `filename` | `execve` path, opened path, or dentry name |
 | 380 | 256 | `args` | up to four `argv` entries joined by spaces |
-| 636 | 4 | pad | to the 8-byte boundary, total 640 |
+| 636 | 4 | `target_ino` | inode of the target binary / opened file |
+| 640 | 4 | `target_dev` | `st_dev` of the target binary / opened file |
+| 644 | 4 | `lineage_root_pid` | tgid of the root AI-runtime ancestor (0 = none) |
+| 648 | 4 | `lineage_flags` | `LINEAGE_FLAG_*` bitmask |
+| 652 | 1 | `enforced_inline` | 1 = synchronous 0 ms in-kernel denial |
+| 653 | 1 | `reserved2` | zero |
+| 654 | 2 | `reserved3` | zero |
 
-`open_flags` is overloaded on purpose: a `LSM_BLOCK` record carries a reason code there instead of a flag
-set, which saves a field in the hot structure. Reason codes: 0 none, 1 quarantine exec, 2 IMDS,
-3 blocked IP, 4 credential read, 5 write denied.
+`open_flags` is overloaded on purpose: a `LSM_BLOCK` / `ENFORCED_INLINE` record carries a reason code there
+instead of a flag set, which saves a field in the hot structure. Reason codes: 0 none, 1 quarantine exec,
+2 IMDS, 3 blocked IP, 4 credential read, 5 write denied, 6 restricted shell, 7 restricted inode,
+8 IMDS IPv6, 9 fail-closed, 10 tamper kill, 11 tamper bpf, 12 path evasion.
 
 ---
 
-## 3. `struct wire_event_msg_t`, 720 bytes
+## 3. `struct wire_event_msg_t`, 736 bytes
 
 | Offset | Size | Field | Notes |
 |---|---|---|---|
 | 0 | 4 | `magic` | `0x58535950` |
-| 4 | 2 | `version` | 2 |
+| 4 | 2 | `version` | 3 |
 | 6 | 2 | `msg_type` | 1 telemetry event, 2 heartbeat |
 | 8 | 8 | `seq_no` | monotonic per collector, not per client |
 | 16 | 64 | `container_id` | see §6 |
-| 80 | 640 | `event` | an embedded `kernel_event_t`, byte for byte |
+| 80 | 656 | `event` | an embedded `kernel_event_t`, byte for byte |
 
 ### Hexdump
 
@@ -99,7 +106,7 @@ A real frame produced by `encode_wire_frame()` with a full 64-character containe
 | Bytes | Decode |
 |---|---|
 | `50 59 53 58` | magic, `PYSX` |
-| `02 00` | version 2 |
+| `03 00` | version 3 |
 | `01 00` | `MSG_TELEMETRY_EVENT` |
 | `97 ce 01 00 00 00 00 00` | `seq_no` 118423 |
 | `32 36 31 30 ... 64 33` | 64 ASCII hex characters, no NUL terminator |
@@ -116,13 +123,13 @@ A real frame produced by `encode_wire_frame()` with a full 64-character containe
 | Offset | Size | Field | Notes |
 |---|---|---|---|
 | 0 | 4 | `magic` | `0x58535950` |
-| 4 | 2 | `version` | 2 |
-| 6 | 2 | `cmd_type` | 10 to 16 |
+| 4 | 2 | `version` | 3 |
+| 6 | 2 | `cmd_type` | 10 to 22 |
 | 8 | 8 | `target_cgroup_id` | `QUARANTINE_CGROUP`, `UNQUARANTINE_CGROUP` |
 | 16 | 4 | `target_pid` | `QUARANTINE_PID`, `UNQUARANTINE_PID` |
 | 20 | 4 | `target_ipv4` | raw network byte order |
 | 24 | 4 | `enforcement_mode` | 0 audit, 1 inline block |
-| 28 | 4 | `reserved0` | zero |
+| 28 | 4 | `value` | general 32-bit payload (was `reserved0`) |
 
 ### Hexdump
 
@@ -134,7 +141,7 @@ A real frame produced by `encode_wire_frame()` with a full 64-character containe
 ```
 
 Command type 12 (`0x000c`) is `CMD_QUARANTINE_CGROUP`; the target occupies offset 8. The unused fields are
-zero, which matters: a decoder that accepts a non-zero `reserved0` is not validating.
+zero, which matters: a decoder that accepts a non-zero `value` for an unrelated command is not validating.
 
 ---
 
@@ -147,11 +154,11 @@ zero, which matters: a decoder that accepts a non-zero `reserved0` is not valida
 | `EVENT_UNKNOWN` | 0 | never |
 | `EVENT_EXECVE` | 1 | `execve` tracepoint, and `bprm_check_security` denials |
 | `EVENT_CONNECT` | 2 | `connect` tracepoint, and `socket_connect` denials |
-| `EVENT_OPENAT` | 3 | `openat` tracepoint, and `file_open` denials |
+| `EVENT_OPENAT` | 3 | `file_open` LSM hook (on open and on denial) |
 | `EVENT_MEMFD_CREATE` | 4 | `memfd_create` tracepoint |
 | `EVENT_PROCESS_EXIT` | 5 | `sched_process_exit` tracepoint |
-| `EVENT_LSM_BLOCK` | 6 | all three LSM hooks when they deny |
-
+| `EVENT_LSM_BLOCK` | 6 | all five LSM hooks when they deny |
+| `EVENT_ENFORCED_INLINE` | 7 | `bprm_check_security` when it denies an in-kernel lineage or a tampering attempt |
 ### Message types
 
 | Name | Value |
@@ -170,6 +177,12 @@ zero, which matters: a decoder that accepts a non-zero `reserved0` is not valida
 | `CMD_BLOCK_IPV4` | 14 | `target_ipv4` |
 | `CMD_UNBLOCK_IPV4` | 15 | `target_ipv4` |
 | `CMD_SET_ENFORCEMENT_MODE` | 16 | `enforcement_mode` |
+| `CMD_PROTECT_PID` | 17 | `target_pid` (value: token) |
+| `CMD_UNPROTECT_PID` | 18 | `target_pid` |
+| `CMD_SET_FAIL_CLOSED` | 19 | `value` (1 fail-closed, 0 clear) |
+| `CMD_SET_SHUTDOWN_TOKEN` | 20 | `value` (authenticated shutdown token) |
+| `CMD_REGISTER_INODE` | 21 | `target_ipv4` = dev, `value` = ino |
+| `CMD_SET_HEARTBEAT` | 22 | `value` = uptime_ms the kernel accepts as fresh |
 
 ---
 
@@ -185,9 +198,9 @@ buffer overflow into `event.magic`; the encoder truncates instead.
 `0xFEA9FEA9`. Never convert to host order in the kernel, never assume host order in the engine; use
 `XSYPHER_IMDS_IPV4_RAW` in C and `abi.IMDS_IPV4_RAW` in Python.
 
-**Frame boundaries.** `SOCK_SEQPACKET` preserves datagram boundaries. A read of fewer than 720 bytes is a
+**Frame boundaries.** `SOCK_SEQPACKET` preserves datagram boundaries. A read of fewer than 736 bytes is a
 protocol error, not a partial frame to be reassembled. The engine decodes with `strict=True`, which
-rejects anything that is not exactly 720 bytes.
+rejects anything that is not exactly 736 bytes.
 
 **Sequence numbers.** `seq_no` is monotonic per collector process and resets on restart. It is written to
 the audit record as `event.seq_no` so a gap in a shipped log can be traced to a collector restart rather
@@ -209,7 +222,7 @@ computed without trusting either clock alone.
               │                                          │
               │  ── no handshake, no negotiation ──      │
               │                                          │
-              │◀──────────── 720 B frames ───────────────┤  broadcast to every client
+              │◀──────────── 736 B frames ───────────────┤  broadcast to every client
               │                                          │
               ├──────────── 32 B commands ──────────────▶│  validate, then bpf_map_update_elem
               │                                          │
@@ -233,7 +246,7 @@ Engine side, per inbound frame:
 
 | Check | Failure action |
 |---|---|
-| length exactly 720 bytes | frame counted as malformed and discarded |
+| length exactly 736 bytes | frame counted as malformed and discarded |
 | `magic == 0x58535950` | malformed |
 | `version == 2` | malformed, reason logged |
 | `container_id` decodes to printable ASCII or empty | treated as `host` |

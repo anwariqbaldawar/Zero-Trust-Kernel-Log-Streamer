@@ -79,6 +79,16 @@ public:
     MapResult unblock_ipv4(std::uint32_t ipv4_network_order);
     MapResult set_enforcement_mode(std::uint32_t mode);
 
+    /// Heartbeat / fail-closed / tamper-protection control plane (ABI v3).
+    MapResult set_heartbeat(std::uint64_t heartbeat_ns);
+    MapResult set_fail_closed(bool enabled);
+    MapResult set_shutdown_token(std::uint32_t token);
+    MapResult protect_pid(std::uint32_t tgid, std::uint32_t token = 0);
+    MapResult unprotect_pid(std::uint32_t tgid);
+    MapResult register_runtime_comm(const char* comm);
+    MapResult register_inode(std::uint64_t ino, std::uint32_t dev);
+    MapResult update_ringbuf_drops(std::uint64_t drops);
+
     /// Snapshot of the per-CPU metric counters, summed over all CPUs.
     /// Index 0..METRIC_MAX-1; returns an empty vector on failure.
     std::vector<std::uint64_t> read_metrics() const;
@@ -93,6 +103,12 @@ private:
     void destroy_skeleton();
     bool set_autoload_for_lsm(bool enable);
     void apply_runtime_defaults_locked();
+
+    // Non-locking map mutations used by apply_runtime_defaults_locked() (which
+    // runs while mutex_ is already held) and by the public wrappers below.
+    MapResult register_runtime_comm_locked(const char* comm);
+    MapResult register_inode_locked(std::uint64_t ino, std::uint32_t dev);
+    MapResult protect_pid_locked(std::uint32_t tgid, std::uint32_t token);
 
     struct xsypher_bpf* skel_ = nullptr;
     std::vector<bpf_link*> links_{};
