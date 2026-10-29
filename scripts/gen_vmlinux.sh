@@ -253,7 +253,10 @@ enum pid_type {
     PIDTYPE_SID = 3,
 };
 
+struct mm_struct { struct file *exe_file; };
+
 struct task_struct {
+    struct mm_struct *mm;
     int pid;
     int tgid;
     char comm[16];

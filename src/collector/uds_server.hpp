@@ -15,6 +15,7 @@
 #include <sys/epoll.h>
 
 #include <atomic>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -68,6 +69,9 @@ public:
     /// Returns the number of clients that accepted the frame.
     std::size_t broadcast(const wire_event_msg_t& frame);
 
+    /// Flush reactor-owned batch. No producer lock or heap allocation.
+    void flush();
+
     /// Number of currently connected engine clients.
     std::size_t client_count() const noexcept;
 
@@ -99,6 +103,8 @@ private:
     void add_epoll(int fd, std::uint32_t events);
     void del_epoll(int fd);
 
+    std::array<wire_event_msg_t, 32> batch_{};
+    std::size_t batch_size_ = 0;
     int listen_fd_ = -1;
     int epoll_fd_ = -1;
     std::string bound_path_{};

@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer/actions/workflows/ci.yml"><img src="https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry/actions/workflows/ci.yml"><img src="https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <img src="https://img.shields.io/badge/npm-2.0.0-cb3837" alt="npm package version 2.0.0">
   <img src="https://img.shields.io/badge/license-Apache--2.0%20%2F%20GPL--2.0-475569" alt="Licensed Apache-2.0, kernel programs GPL-2.0">
   <img src="https://img.shields.io/badge/kernel-5.10%2B-334155" alt="Kernel 5.10 or newer">
@@ -31,7 +31,7 @@
   <a href="#enterprise-compliance-regulatory-mapping">Compliance</a> ·
   <a href="#benchmarks">Benchmarks</a> ·
   <a href="#production-deployment">Deployment</a> ·
-  <a href="#production-sla-resource-guarantees">SLA</a> ·
+  <a href="#resource-budgets-and-validation-status">Validation</a> ·
   <a href="docs/">Docs</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
@@ -40,60 +40,16 @@
 
 ## Ten-second quickstart
 
-```bash
-npx xsypher-stream
-```
-
-That single command audits what it needs, fetches the pinned source snapshot, verifies its SHA-256, builds
-an isolated Python environment under `~/.xsypher`, and runs the full end-to-end simulation: 10,000 kernel
-events, five attack chains, and the exact 32-byte policy commands the kernel would receive.
-
-> [!IMPORTANT]
-> The npm package is built and verified on every commit (`npm pack` produces 36.4 kB, 10 files) but is not
-> yet published to the registry, so `npx xsypher-stream` resolves only after `npm publish`. Until then, run
-> the same entry point from a checkout. Nothing else changes:
+From a source checkout (Python 3.10+):
 
 ```bash
-git clone https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer.git
-cd Zero-Trust-Kernel-Log-Streamer
-npm install -g .      # installs the xsypher binary, no dependencies, no postinstall script
-xsypher simulate
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && PYTHONPATH=src .venv/bin/python tests/simulate_mcp_attack.py --events 10000
 ```
 
-Real output from `node bin/xsypher.mjs simulate 5000` on the reference host:
-
-```console
-$ xsypher simulate 5000
-[ok] reusing cached environment /home/user/Zero-Trust-Kernel-Log-Streamer/.venv (PyYAML 6.0.3)
-[..] simulating 5,000 kernel events with 5 attack chains
-
-  [2/3] injecting attack chains
-        ok  chain A: MCP prompt injection -> interactive shell (2.2 ms)
-        ok  chain B: MCP recon tool + reverse shell port (2.2 ms)
-        ok  chain C: Cloud IMDS credential theft (2.3 ms)
-        ok  chain D: Host credential harvest (2.3 ms)
-        ok  chain E: Fileless payload staging via memfd (2.4 ms)
-
-RESULT: PASSED - all attack chains were detected and contained, every expected wire_policy_cmd_t was delivered.
-
-[--] result: all chains contained
-     chains contained  5 of 5, each 2.2 to 2.5 ms from event to policy command
-     policy commands   8 of 8 expected wire_policy_cmd_t packets
-     audit chain       verified, 8 SHA-256 chained records
-     benign stream     5,000 events in 0.10 s (49,791 events/s)
-```
-
-No root, no kernel toolchain, no Docker. The simulation replaces only the kernel: the ring buffer wire
-format, the `AF_UNIX` `SOCK_SEQPACKET` socket, the engine process, the rule engine and the audit log are the
-real ones.
-
-<p align="center">
-  <img src="assets/demo.gif" alt="Terminal recording: the engine raises a critical MCP shell breakout alert with its resolved lineage, applies the quarantine command, then the end-to-end harness reports five attack chains contained and eight policy commands delivered" width="838">
-</p>
-
-<p align="center"><sub>Recorded from two real runs: the operator view with enforcement on, then the harness. Rebuild with <code>make demo</code>.</sub></p>
-
----
+This runs real user-space socket transport and simulated kernel events, not live kernel enforcement.
+For the native collector, install the prerequisites below, then run
+`cmake -S . -B build && cmake --build build -j2`.
+The npm bootstrap package is unpublished; registry installation is not a supported quickstart.
 
 ## The problem
 
@@ -139,7 +95,7 @@ Traditional container security assumes static workloads: a web server executes `
 | **Lineage Context** | No: inspects only immediate binary | Partial: relies on asynchronous `/proc` | **Yes: native O(depth) in-memory lineage tree** |
 | **Dynamic Tool Execution** | Fails: static profile blocks legitimate agent tools | Fails: high alert fatigue on valid tool calls | **Yes: distinguishes agent parentage from user shells** |
 | **Enforcement Point** | Static compile-time sandbox | Post-breach user-space alert (log-only) | **Kernel-space inline LSM denial (`-EPERM`)** |
-| **Mitigation Latency** | N/A (compile-time) | ~50 ms to 2,000 ms (exploit succeeds first) | **2.1 ms deterministic containment** |
+| **Mitigation Latency** | N/A (compile-time) | ~50 ms to 2,000 ms (exploit succeeds first) | **Historical simulation: ~2.1 ms** |
 | **Audit Ledger** | Ephemeral syslog text | Standard mutable log file | **SHA-256 forward-chained cryptographic ledger** |
 | **Privilege Model** | Broad host access required | Monolithic privileged agent | **Privileged eBPF separated from unprivileged engine** |
 
@@ -154,9 +110,9 @@ Traditional container security assumes static workloads: a web server executes `
 | **Mitigation** | `quarantine_pid`, `quarantine_cgroup`, `block_ipv4`, `block_imds` and optional `SIGKILL`, translated into 32-byte commands the collector validates before any map write |
 | **Forensics** | SHA-256 forward-chained JSONL audit log, verified at startup and on demand, tamper-evident without a database |
 | **Observability** | Prometheus text exporter on `:9109`, ANSI operator console that degrades to plain lines for a log shipper |
-| **Zero-friction install** | `npx xsypher-stream` bootstraps and caches everything it needs; the npm package has no dependencies and no install scripts |
+| **Zero-friction install** | the local source bootstrapper bootstraps and caches everything it needs; the npm package has no dependencies and no install scripts |
 | **Safety switch** | audit-only mode where detection, metrics and the audit chain behave identically but nothing is denied |
-| **In-kernel lineage** | `sched_process_fork` propagates AI-runtime flags, the root PID and quarantine state to children in the kernel; `bprm_check_security` denies a tracked AI lineage executing a restricted shell or a renamed binary in 0 ms |
+| **In-kernel lineage** | `sched_process_fork` propagates AI-runtime flags, the root PID and quarantine state to children in the kernel; `bprm_check_security` denies a tracked AI lineage executing a restricted shell or a renamed binary synchronously |
 | **Fail-closed** | the engine heartbeats into `config_map`; when the collector stops receiving it the kernel denies tracked AI lineages at the LSM hooks instead of failing open |
 | **Tamper protection** | `lsm/task_kill` blocks `SIGKILL`/`SIGTERM`/`SIGSTOP` against protected PIDs and `lsm/bpf` blocks unauthorized map mutation, both lifted by an authenticated shutdown token |
 
@@ -262,19 +218,23 @@ ones in [docs/DETECTIONS.md](docs/DETECTIONS.md).
 | Ingress Tool Transfer | [T1105](https://attack.mitre.org/techniques/T1105/) | `MCP_RECON_OR_EXFIL_TOOL` | `execve` | quarantine pid, kill |
 
 Every row above is enforced inline: the hook returns an error to the caller, it does not merely log. The
-honest exceptions, all listed under [Limits](#limits-and-non-goals): `openat2` is not hooked, IPv6 metadata
-is detected rather than denied, and an arbitrary C2 port is invisible because the port list is a blocklist.
+coverage limits listed under [Limits](#limits-and-non-goals) and in
+[the validation notes](docs/KERNEL-VALIDATION.md). File opens use LSM coverage rather than individual syscall hooks.
 
-## Enterprise compliance & regulatory mapping
+## Security Control Mapping & Reference Architecture
 
-Security and platform teams running agentic workloads in enterprise environments leverage xSypher-Stream to satisfy zero-trust compliance standards:
+These are engineering reference mappings, not certifications or evidence that a deployment complies.
+Control effectiveness depends on policy provisioning, kernel support, log retention, access control,
+and independent validation by the operator and auditor.
 
-| Framework | Control & Requirement | How xSypher-Stream Satisfies It |
+| Reference | Supporting mechanism | Additional evidence required |
 |---|---|---|
-| **SOC 2 Type II** | **CC6.6 & CC6.8**: Boundary Protection & Malicious Code Prevention | Enforces inline kernel denial (`-EPERM`) on unauthorized egress to cloud metadata (IMDS) and blocks unauthorized interactive shell breakouts. |
-| **NIST AI RMF 1.0** | **Measure 2.7 & Manage 2.4**: Autonomous Agent Containment & Risk Control | Continuously isolates poisoned tool calls and prompt-injection side effects at the syscall boundary before payloads escape container namespaces. |
-| **PCI-DSS v4.0** | **Req 11.5 & 10.2**: File Integrity & Non-Repudiable Audit Logging | Prevents unauthorized `/etc/shadow` access and logs every security event to a cryptographic, forward-chained SHA-256 immutable ledger. |
-| **HIPAA Security** | **§ 164.312(b)**: Audit Controls & Data Safeguards | Non-repudiable audit records prove that sensitive data exfiltration attempts were blocked in-flight with microsecond attribution. |
+| SOC 2 CC6.6 / CC6.8 | LSM execution and egress policy | Policy review, change control, live denial tests |
+| PCI-DSS access monitoring | Sensitive-file events and chained audit records | Coverage assessment, off-host retention, key and host security |
+| HIPAA audit controls | Process attribution and security events | Risk analysis, access reviews, retention and privacy procedures |
+| NIST AI RMF | Agent-lineage isolation | Workload-specific evaluation and incident response exercises |
+
+A hash chain alone is not immutable storage or proof of non-repudiation.
 
 ## Benchmarks
 
@@ -345,7 +305,7 @@ used. A git checkout is used in place, with no download at all.
 
 | Path | Command | Needs |
 |---|---|---|
-| npm, once published | `npx xsypher-stream` | Node 18+ and Python 3.10+ |
+| npm, once published | the local source bootstrapper | Node 18+ and Python 3.10+ |
 | npm, from a checkout | `npm install -g .` then `xsypher simulate` | Node 18+, Python 3.10+ |
 | Source | `git clone ... && pip install -r requirements.txt` | Python 3.10+ and PyYAML |
 | Containers | `docker compose -f deploy/docker-compose.yml up --build` | Docker, kernel 5.10+, host BTF |
@@ -366,8 +326,8 @@ you pass `--no-lsm-fallback`, which turns the degradation into a startup failure
 ### From source
 
 ```bash
-git clone https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer.git
-cd Zero-Trust-Kernel-Log-Streamer
+git clone https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry.git
+cd xSypher-Stream-Zero-Trust-Kernel-log-Telemetry
 pip install -r requirements.txt
 make vmlinux          # generate include/vmlinux.h from this host's BTF
 make all              # BPF object, libbpf skeleton, C++20 collector
@@ -409,7 +369,7 @@ $ xsypher doctor
   warn  toolchain   clang missing, bpftool missing, g++ present
   ok    git         /usr/bin/git
   warn  privileges  uid 1001
-  ok    source      checkout /home/user/Zero-Trust-Kernel-Log-Streamer
+  ok    source      checkout /home/user/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry
   --------------------------------------------------------------------------
   telemetry    not usable on this host
   enforcement  not usable
@@ -605,18 +565,17 @@ places binaries and configuration.
 None of these three paths executes in this project's CI, which has no privileged runner and no Docker. They
 are maintained and reviewed but verified by hand; see [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
-## Production SLA & resource guarantees
+## Resource budgets and validation status
 
-Designed from day one for zero-overhead production co-location on mission-critical AI agent nodes:
+No production SLA or 100k-events/sec guarantee is established. Historical simulation measurements below
+are not live-kernel benchmarks. Inline LSM decisions do not wait for Python; they still consume kernel
+execution time, including best-effort alert emission before the hook returns.
 
-| Operational Metric | Production Guarantee | Architecture Mechanism |
-|---|---|---|
-| **CPU Overhead** | < 1.2% at 50,000 events/s | Zero-copy kernel ring buffer with epoll wakeups |
-| **Collector Memory (RSS)** | < 15 MiB resident | C++20 non-allocating event processor |
-| **Engine Memory (RSS)** | < 45 MiB bounded | Strict LRU bounding at 200,000 tracked processes |
-| **Interception Latency** | 4.59 µs mean per event | eBPF in-kernel branch filtering without userspace trap |
-| **Containment Time** | 2.1 ms median end-to-end | In-memory lineage evaluation and direct BPF map push |
-| **Host Failsafe** | Non-blocking ring buffer | If userspace halts, kernel drops events instead of stalling host |
+The collector batches up to 32 ABI-compatible SEQPACKET records with `sendmmsg`, flushing partial batches
+on each reactor iteration. Slow consumers lose telemetry with an explicit drop count; denial does not
+depend on delivery. Full audit is opt-in through `audit_config_map[0] = 1`.
+
+See [kernel validation and policy operations](docs/KERNEL-VALIDATION.md) for remaining coverage limits.
 
 ## Verification
 
@@ -669,10 +628,11 @@ figure that no document embeds. Both run in CI.
 ## Limits and non-goals
 
 - `openat2` is not hooked; file policy is enforced through `lsm/file_open`, which sees every open path.
-- `file_open` sees only the dentry basename; the credential-path branch cannot match absolute prefixes.
-  Effective in-kernel file protection today is write denial inside a quarantined domain.
+- File policy resolves paths at the LSM hook. Aliases, mount namespaces, and already-open descriptors
+  require separate threat-model validation.
 - IMDS denial covers IPv4 and the AWS IPv6 address `fd00:ec2::254` plus IPv4-mapped IPv6, inline at `lsm/socket_connect`.
-- The C2 rule is a port blocklist. A custom port is not covered; that needs behaviour scoring, not a list.
+- The Python C2 detection rule remains a port heuristic; inline AI Internet egress instead uses an exact
+  executable-identity and destination allowlist, including port 443.
 - `core_pattern` writes are captured by the `openat` filter but no shipped rule reads them.
 - `args` captures four `argv` pointers of 64 bytes: a command line, not a payload.
 - Container identity depends on cgroup layout. Unknown runtimes resolve to `host`, which disables

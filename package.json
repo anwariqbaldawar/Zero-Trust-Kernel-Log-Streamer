@@ -16,13 +16,13 @@
   ],
   "license": "Apache-2.0",
   "author": "anwariqbaldawar",
-  "homepage": "https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer#readme",
+  "homepage": "https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer.git"
+    "url": "git+https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry.git"
   },
   "bugs": {
-    "url": "https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer/issues"
+    "url": "https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry/issues"
   },
   "bin": {
     "xsypher": "./bin/xsypher.mjs",

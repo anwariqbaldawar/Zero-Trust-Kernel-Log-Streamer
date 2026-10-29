@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security report
-    url: https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer/security/advisories/new
+    url: https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry/security/advisories/new
     about: Report a vulnerability privately. Never open a public issue for a security problem.
   - name: Design questions
-    url: https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer/blob/main/docs/ARCHITECTURE.md
+    url: https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry/blob/main/docs/ARCHITECTURE.md
     about: Start with the architecture and threat model documents.

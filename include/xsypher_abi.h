@@ -184,6 +184,7 @@ enum xsypher_block_reason {
     BLOCK_REASON_TAMPER_KILL = 10,
     BLOCK_REASON_TAMPER_BPF = 11,
     BLOCK_REASON_PATH_EVASION = 12,
+    BLOCK_REASON_EGRESS_NOT_ALLOWED = 13,
 };
 
 /* ------------------------------------------------------------------------ */
@@ -316,6 +317,17 @@ struct inode_key_t {
     __u32 pad;
 };
 
+/* Exact egress grant: executable inode/device + cgroup + destination.
+ * Addresses/ports are network order, IPv4 occupies address[0:4]. */
+struct egress_key_t {
+    __u64 cgroup_id;
+    __u64 executable_ino;
+    __u32 executable_dev;
+    __u16 family;
+    __u16 port;
+    __u8 address[16];
+};
+
 /* config_map value: the single xSypher control block. */
 struct xsypher_config_t {
     __u32 enforcement_mode;      /* enum xsypher_enforcement_mode */
@@ -349,6 +361,7 @@ XSYPHER_STATIC_ASSERT(sizeof(struct wire_event_msg_t) == 736,
                       "wire_event_msg_t must be exactly 736 bytes");
 XSYPHER_STATIC_ASSERT(sizeof(struct wire_policy_cmd_t) == 32,
                       "wire_policy_cmd_t must be exactly 32 bytes");
+XSYPHER_STATIC_ASSERT(sizeof(struct egress_key_t) == 40, "egress key layout");
 XSYPHER_STATIC_ASSERT(sizeof(struct lineage_state_t) == 24,
                       "lineage_state_t must be exactly 24 bytes");
 XSYPHER_STATIC_ASSERT(sizeof(struct protected_entry_t) == 8,
@@ -397,8 +410,8 @@ XSYPHER_STATIC_ASSERT(offsetof(struct wire_event_msg_t, event) == 80,
  * AWS IPv6 Instance Metadata Service address fd00:ec2::254 as a raw 16-byte
  * address (network byte order, exactly as in6_addr.s6_addr holds it).
  */
-#define XSYPHER_IMDS_IPV6_RAW {0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,\
-                                0x00, 0x00, 0x00, 0x00, 0xec, 0x2, 0x0, 0xfe}
+#define XSYPHER_IMDS_IPV6_RAW {0xfd, 0x00, 0x0e, 0xc2, 0, 0, 0, 0,\
+                                0, 0, 0, 0, 0, 0, 0x02, 0x54}
 
 #ifdef __cplusplus
 } /* extern "C" */

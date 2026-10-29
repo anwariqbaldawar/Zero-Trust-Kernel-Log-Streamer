@@ -768,3 +768,19 @@ __all__ = [
     "layout_report",
     "port_from_raw",
 ]
+
+
+class EgressKey(ctypes.Structure):
+    """Native map key; addresses/port are raw network-order bytes."""
+    _fields_ = [
+        ("cgroup_id", ctypes.c_uint64),
+        ("executable_ino", ctypes.c_uint64),
+        ("executable_dev", ctypes.c_uint32),
+        ("family", ctypes.c_uint16),
+        ("port", ctypes.c_uint16),
+        ("address", ctypes.c_uint8 * 16),
+    ]
+
+
+assert ctypes.sizeof(EgressKey) == 40
+assert EgressKey.address.offset == 24

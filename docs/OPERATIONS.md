@@ -105,7 +105,7 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: Policy commands are not reaching the collector
-          runbook: https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer/blob/main/docs/OPERATIONS.md#troubleshooting
+          runbook: https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry/blob/main/docs/OPERATIONS.md#troubleshooting
 
       - alert: XsypherSensorSilent
         expr: rate(xsypher_events_total[10m]) == 0

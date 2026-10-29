@@ -163,9 +163,25 @@ struct {
     __type(value, __u8);  /* 1 = restricted */
 } restricted_inodes_map SEC(".maps");
 
-/* In-kernel process lineage (tgid -> lineage_state_t). */
+/* Explicit opt-in full audit, independent of enforcement mode. */
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u32);
+} audit_config_map SEC(".maps");
+
+/* Empty map intentionally means deny all tracked AI Internet egress. */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 16384);
+    __type(key, struct egress_key_t);
+    __type(value, __u8);
+} egress_allowlist SEC(".maps");
+
+/* Bounded lineage state; eviction is a documented coverage limit. */
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 65536);
     __type(key, __u32);   /* tgid */
     __type(value, struct lineage_state_t);
@@ -642,6 +658,16 @@ static __always_inline struct kernel_event_t *reserve_event(__u32 type)
 {
     struct kernel_event_t *ev;
 
+    __u32 zero = 0;
+    __u32 *audit = bpf_map_lookup_elem(&audit_config_map, &zero);
+    __u32 tgid = bpf_get_current_pid_tgid() >> 32;
+    struct lineage_state_t lin = lineage_of(tgid);
+    if ((!audit || !*audit) && !lin.ai_runtime &&
+        pid_action(tgid) != QUARANTINE_BLOCK &&
+        cgroup_action(bpf_get_current_cgroup_id()) != QUARANTINE_BLOCK &&
+        (type == EVENT_EXECVE || type == EVENT_CONNECT || type == EVENT_PROCESS_EXIT))
+        return 0;
+
     ev = bpf_ringbuf_reserve(&events_ringbuf, sizeof(struct kernel_event_t), 0);
     if (!ev) {
         metric_inc(METRIC_RINGBUF_DROPS);
@@ -651,6 +677,8 @@ static __always_inline struct kernel_event_t *reserve_event(__u32 type)
     __builtin_memset(ev, 0, sizeof(struct kernel_event_t));
     fill_task_context(ev);
     ev->event_type = type;
+    ev->lineage_root_pid = lin.root_pid;
+    ev->lineage_flags = lin.ai_runtime ? LINEAGE_FLAG_AI_RUNTIME : 0;
     metric_inc(METRIC_EVENTS_TOTAL);
 
     return ev;
@@ -683,7 +711,7 @@ static __always_inline void fill_enforcement_ctx(struct kernel_event_t *ev,
 /*
  * Emit an EVENT_ENFORCED_INLINE record for a synchronous, in-kernel denial.
  * The record is submitted to the ring buffer *after* the hook has already
- * decided to return -EPERM, so it never sits on the enforcement critical path.
+ * decided to return -EPERM. Delivery is best effort and cannot change denial.
  */
 static __always_inline void emit_enforced_inline(struct kernel_event_t *ev,
                                                  __u32 reason, __u64 ino,
@@ -887,7 +915,7 @@ int xsypher_memfd_create(struct sys_enter_ctx *ctx)
  * copy_process() before _do_fork() emits the tracepoint).  Processes that are
  * not part of a tracked AI lineage are skipped so the map stays focused.
  */
-SEC("tp_btf/sched/sched_process_fork")
+SEC("tp_btf/sched_process_fork")
 int BPF_PROG(xsypher_process_fork, struct task_struct *parent,
              struct task_struct *child)
 {
@@ -927,6 +955,28 @@ int BPF_PROG(xsypher_process_fork, struct task_struct *parent,
     return 0;
 }
 
+/* Commit runtime classification after successful exec as well as in bprm.
+ * The latter is necessary for interpreter opens before sched_process_exec. */
+SEC("tp_btf/sched_process_exec")
+int BPF_PROG(xsypher_process_exec, struct task_struct *task, pid_t old_pid,
+             struct linux_binprm *bprm)
+{
+    __u32 tgid = BPF_CORE_READ(task, tgid);
+    struct lineage_state_t lin = lineage_of(tgid);
+    char comm[MAX_COMM_LEN] = {};
+    bpf_core_read_str(comm, sizeof(comm), &task->comm);
+    if (comm_is_runtime(comm)) {
+        lin.ai_runtime = 1;
+        if (!lin.root_pid)
+            lin.root_pid = tgid;
+    }
+    if (lin.ai_runtime) {
+        lin.cgroup_id = bpf_get_current_cgroup_id();
+        lineage_store(tgid, &lin);
+    }
+    return 0;
+}
+
 /* ----------------------------------------------------------------------- */
 /* Tracepoint: sched_process_exit - lineage cleanup + telemetry             */
 /* ----------------------------------------------------------------------- */
@@ -943,10 +993,14 @@ int xsypher_process_exit(struct sched_process_exit_ctx *ctx)
      * attribute an unrelated process.  Deletion is unconditional (no-op when
      * absent).
      */
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task_btf();
+    /* A worker exiting must not erase the whole process's security state.
+     * do_exit decrements signal->live before trace_sched_process_exit. */
+    if (BPF_CORE_READ(task, signal, live.counter) != 0)
+        return 0;
+    ev = reserve_event(EVENT_PROCESS_EXIT);
     bpf_map_delete_elem(&lineage_map, &tgid);
     bpf_map_delete_elem(&quarantined_pids_map, &tgid);
-
-    ev = reserve_event(EVENT_PROCESS_EXIT);
     if (!ev)
         return 0;
 
@@ -974,7 +1028,6 @@ static __always_inline int bprm_restricted_reason(struct linux_binprm *bprm,
     struct file *file = BPF_CORE_READ(bprm, file);
     struct inode *inode;
     struct super_block *sb;
-    struct path fpath;
     char *pathp;
     int plen = 0;
     int blen = 0;
@@ -998,9 +1051,7 @@ static __always_inline int bprm_restricted_reason(struct linux_binprm *bprm,
             *out_dev = BPF_CORE_READ(sb, s_dev);
     }
 
-    __builtin_memset(&fpath, 0, sizeof(fpath));
-    fpath = BPF_CORE_READ(file, f_path);
-    pathp = resolve_path(&fpath, &plen);
+    pathp = resolve_path(__builtin_preserve_access_index(&file->f_path), &plen);
     if (pathp && plen > 0) {
         copy_path_str(pathbuf, pathp, plen);
         blen = last_component(pathp, plen, base, MAX_COMM_LEN);
@@ -1141,7 +1192,7 @@ try_v4mapped:
 
 SEC("lsm/socket_connect")
 int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
-             struct sockaddr *address, int addrlen)
+             struct sockaddr *address, int addrlen, int ret)
 {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     __u32 tgid = (__u32)(bpf_get_current_pid_tgid() >> 32);
@@ -1154,6 +1205,8 @@ int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
     struct lineage_state_t lin;
     __u16 family = 0;
 
+    if (ret)
+        return ret;
     if (!address || addrlen < (int)sizeof(struct sockaddr_in))
         return 0;
     if (enforcement_mode() != ENFORCEMENT_INLINE_BLOCK)
@@ -1178,7 +1231,7 @@ int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
         /* 1) Explicitly blocked destination (any process). */
         blocked = bpf_map_lookup_elem(&blocked_ipv4_map, &daddr);
         if (blocked) {
-            ev = reserve_event(EVENT_CONNECT);
+            ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
                 ev->af_family = AF_INET;
                 ev->daddr_v4 = daddr;
@@ -1192,7 +1245,7 @@ int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
 
         /* 2) Cloud metadata service from a quarantined / AI lineage. */
         if ((quarantine_state || lin.ai_runtime) && daddr == XSYPHER_IMDS_ADDR) {
-            ev = reserve_event(EVENT_CONNECT);
+            ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
                 ev->af_family = AF_INET;
                 ev->daddr_v4 = daddr;
@@ -1206,7 +1259,7 @@ int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
 
         /* 3) Fail-closed: deny tracked AI lineages. */
         if (fail_closed_triggered() && lin.ai_runtime) {
-            ev = reserve_event(EVENT_CONNECT);
+            ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
                 ev->af_family = AF_INET;
                 ev->daddr_v4 = daddr;
@@ -1218,13 +1271,15 @@ int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
             return -EPERM;
         }
     } else if (family == AF_INET6) {
+        if (addrlen < (int)sizeof(addr6))
+            return -EPERM;
         if (bpf_probe_read_kernel(&addr6, sizeof(addr6), address) != 0)
             return 0;
 
         /* AWS IPv6 IMDS + IPv4-mapped IPv6 IMDS. */
         if ((quarantine_state || lin.ai_runtime) &&
             ipv6_is_imds(&addr6.sin6_addr.in6_u.u6_addr8[0])) {
-            ev = reserve_event(EVENT_CONNECT);
+            ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
                 ev->af_family = AF_INET6;
                 __builtin_memcpy(ev->daddr_v6, &addr6.sin6_addr, 16);
@@ -1237,7 +1292,7 @@ int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
         }
 
         if (fail_closed_triggered() && lin.ai_runtime) {
-            ev = reserve_event(EVENT_CONNECT);
+            ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
                 ev->af_family = AF_INET6;
                 __builtin_memcpy(ev->daddr_v6, &addr6.sin6_addr, 16);
@@ -1245,6 +1300,42 @@ int BPF_PROG(xsypher_lsm_socket_connect, struct socket *sock,
             }
             emit_enforced_inline(ev, BLOCK_REASON_FAIL_CLOSED, 0, 0, &lin);
             metric_inc(METRIC_FAIL_CLOSED_BLOCKS);
+            metric_inc(METRIC_LSM_BLOCKS);
+            return -EPERM;
+        }
+    }
+
+    if ((family == AF_INET || family == AF_INET6) &&
+        (lin.ai_runtime || quarantine_state)) {
+        struct egress_key_t key = {};
+        struct task_struct *task = (struct task_struct *)bpf_get_current_task_btf();
+        struct file *exe = BPF_CORE_READ(task, mm, exe_file);
+        struct inode *inode = exe ? BPF_CORE_READ(exe, f_inode) : 0;
+        if (inode) {
+            key.executable_ino = BPF_CORE_READ(inode, i_ino);
+            key.executable_dev = BPF_CORE_READ(inode, i_sb, s_dev);
+        }
+        key.cgroup_id = cgroup_id;
+        key.family = family;
+        if (family == AF_INET) {
+            key.port = addr4.sin_port;
+            __builtin_memcpy(key.address, &addr4.sin_addr.s_addr, 4);
+        } else {
+            key.port = addr6.sin6_port;
+            __builtin_memcpy(key.address, &addr6.sin6_addr, 16);
+        }
+        __u8 *grant = bpf_map_lookup_elem(&egress_allowlist, &key);
+        if (!inode || !grant || !*grant || quarantine_state) {
+            ev = reserve_event(EVENT_ENFORCED_INLINE);
+            if (ev) {
+                ev->af_family = family;
+                ev->dport = key.port;
+                if (family == AF_INET)
+                    ev->daddr_v4 = addr4.sin_addr.s_addr;
+                else
+                    __builtin_memcpy(ev->daddr_v6, key.address, 16);
+            }
+            emit_enforced_inline(ev, BLOCK_REASON_EGRESS_NOT_ALLOWED, 0, 0, &lin);
             metric_inc(METRIC_LSM_BLOCKS);
             return -EPERM;
         }
@@ -1263,7 +1354,6 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     __u32 tgid = (__u32)(bpf_get_current_pid_tgid() >> 32);
     struct kernel_event_t *ev;
-    struct path fpath;
     struct inode *inode;
     struct super_block *sb;
     struct lineage_state_t lin;
@@ -1283,9 +1373,7 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
 
     /* Fail-closed: deny tracked AI lineages. */
     if (fail_closed_triggered() && lin.ai_runtime) {
-        __builtin_memset(&fpath, 0, sizeof(fpath));
-        fpath = BPF_CORE_READ(file, f_path);
-        pathp = resolve_path(&fpath, &plen);
+        pathp = resolve_path(__builtin_preserve_access_index(&file->f_path), &plen);
         ev = reserve_event(EVENT_ENFORCED_INLINE);
         if (ev && pathp && plen > 0) {
             copy_path_str(ev->filename, pathp, plen);
@@ -1297,11 +1385,16 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
     }
 
     /* Full path resolution (bpf_d_path into per-CPU scratch). */
-    __builtin_memset(&fpath, 0, sizeof(fpath));
-    fpath = BPF_CORE_READ(file, f_path);
-    pathp = resolve_path(&fpath, &plen);
-    if (!pathp || plen <= 0)
+    pathp = resolve_path(__builtin_preserve_access_index(&file->f_path), &plen);
+    if (!pathp || plen <= 0) {
+        if (lin.ai_runtime && enforcement_mode() == ENFORCEMENT_INLINE_BLOCK) {
+            ev = reserve_event(EVENT_ENFORCED_INLINE);
+            emit_enforced_inline(ev, BLOCK_REASON_PATH_EVASION, 0, 0, &lin);
+            metric_inc(METRIC_LSM_BLOCKS);
+            return -EPERM;
+        }
         return 0;
+    }
 
     inode = BPF_CORE_READ(file, f_inode);
     if (inode) {
@@ -1317,7 +1410,8 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
     staged = write_like && is_writable_staging_path(pathp, plen);
 
     /* Enforcement for quarantined domains. */
-    if (should_block_quarantine(tgid, cgroup_id)) {
+    if (enforcement_mode() == ENFORCEMENT_INLINE_BLOCK &&
+        (lin.ai_runtime || should_block_quarantine(tgid, cgroup_id))) {
         if (sensitive) {
             ev = reserve_event(EVENT_ENFORCED_INLINE);
             if (ev) {
@@ -1327,7 +1421,7 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
             emit_enforced_inline(ev, BLOCK_REASON_CREDENTIAL_READ, ino, dev,
                                  &lin);
             metric_inc(METRIC_LSM_BLOCKS);
-            return -EACCES;
+            return -EPERM;
         }
         if (staged) {
             ev = reserve_event(EVENT_ENFORCED_INLINE);
@@ -1338,7 +1432,7 @@ int BPF_PROG(xsypher_lsm_file_open, struct file *file, int ret)
             emit_enforced_inline(ev, BLOCK_REASON_WRITE_DENIED, ino, dev,
                                  &lin);
             metric_inc(METRIC_LSM_BLOCKS);
-            return -EACCES;
+            return -EPERM;
         }
     }
 
@@ -1433,6 +1527,10 @@ int BPF_PROG(xsypher_lsm_bpf, int cmd, union bpf_attr *attr, unsigned int size,
     /* The collector / engine are registered as protected and may mutate. */
     pe = bpf_map_lookup_elem(&protected_pids_map, &tgid);
     if (pe && pe->is_protected)
+        return 0;
+
+    struct lineage_state_t lin = lineage_of(tgid);
+    if (!lin.ai_runtime)
         return 0;
 
     ev = reserve_event(EVENT_ENFORCED_INLINE);

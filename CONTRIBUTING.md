@@ -14,8 +14,8 @@ Thanks for helping. This project sits on a syscall hot path, so the bar is "prov
 ## Development setup
 
 ```bash
-git clone https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer.git
-cd Zero-Trust-Kernel-Log-Streamer
+git clone https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry.git
+cd xSypher-Stream-Zero-Trust-Kernel-log-Telemetry
 
 pip install -r requirements.txt pytest
 make check-deps                     # clang / g++ / bpftool

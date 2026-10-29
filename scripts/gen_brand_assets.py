@@ -131,7 +131,7 @@ def social() -> str:
   <text x="96" y="392" font-family="{MONO}" font-size="19" fill="{BLUE_SOFT}">execve  connect  openat  memfd_create  sched_process_exit</text>
   <text x="96" y="426" font-family="{MONO}" font-size="19" fill="{MUTED_DARK}">bprm_check_security  ·  socket_connect  ·  file_open</text>
   <text x="96" y="490" font-family="{FONT}" font-size="19" fill="{INK_DARK}">The decision is made in user space. The denial happens in the kernel.</text>
-  <text x="96" y="556" font-family="{MONO}" font-size="17" fill="{MUTED_DARK}">github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer</text>
+  <text x="96" y="556" font-family="{MONO}" font-size="17" fill="{MUTED_DARK}">github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry</text>
 </svg>
 """
 

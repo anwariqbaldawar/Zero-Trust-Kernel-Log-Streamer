@@ -414,6 +414,8 @@ int main(int argc, char** argv) {
             }
         }
 
+        server.flush();
+
         if (config.status_report) {
             const std::uint64_t now = monotonic_ms();
             if (now - last_status >= static_cast<std::uint64_t>(kStatusIntervalMs)) {

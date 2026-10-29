@@ -13,7 +13,7 @@
 # over the unix socket, and --active-kill (SIGKILL from user space) is optional.
 [Unit]
 Description=xSypher-Stream zero-trust threat engine and metrics exporter
-Documentation=https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer
+Documentation=https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry
 Requires=xsypher-collector.service
 After=xsypher-collector.service
 

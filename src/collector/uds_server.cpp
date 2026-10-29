@@ -353,54 +353,43 @@ void UdsServer::emit_client_event(bool connected) {
 }
 
 std::size_t UdsServer::broadcast(const wire_event_msg_t& frame) {
-    std::vector<int> fds;
+    // Called only from the epoll reactor; the fixed-capacity queue needs no lock.
+    batch_[batch_size_++] = frame;
+    if (batch_size_ == batch_.size())
+        flush();
+    return client_count(); // queued, not an acknowledgement of delivery
+}
+
+void UdsServer::flush() {
+    if (!batch_size_)
+        return;
+    std::array<int, kMaxClients> fds{};
+    std::size_t count = 0;
     {
         std::lock_guard<std::mutex> guard(clients_mutex_);
-        if (shutting_down_.load(std::memory_order_relaxed) || clients_.empty()) {
-            return 0;
-        }
-        fds.reserve(clients_.size());
-        for (const auto& entry : clients_) {
-            fds.push_back(entry.first);
-        }
+        for (const auto& [fd, client] : clients_)
+            if (count < fds.size()) fds[count++] = fd;
     }
-
-    std::size_t delivered = 0;
-    std::vector<int> dead;
-    for (const int fd : fds) {
-        const ssize_t n = ::send(fd, &frame, sizeof(frame), MSG_DONTWAIT | MSG_NOSIGNAL);
-        if (n == static_cast<ssize_t>(sizeof(frame))) {
-            ++delivered;
-            std::lock_guard<std::mutex> guard(clients_mutex_);
-            auto it = clients_.find(fd);
-            if (it != clients_.end()) {
-                it->second.frames_sent += 1;
-            }
-            continue;
-        }
-
-        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS)) {
-            // Consumer too slow: drop the frame rather than stalling the ring
-            // buffer callback.  The kernel keeps counting drops too.
-            dropped_frames_.fetch_add(1, std::memory_order_relaxed);
-            std::lock_guard<std::mutex> guard(clients_mutex_);
-            auto it = clients_.find(fd);
-            if (it != clients_.end()) {
-                it->second.frames_dropped += 1;
-            }
-            continue;
-        }
-
-        if (n < 0 && errno == EINTR) {
-            continue;
-        }
-        dead.push_back(fd);
+    std::array<iovec, 32> iov{};
+    std::array<mmsghdr, 32> msgs{};
+    for (std::size_t i = 0; i < batch_size_; ++i) {
+        iov[i] = {&batch_[i], sizeof(wire_event_msg_t)};
+        msgs[i].msg_hdr.msg_iov = &iov[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
     }
-
-    for (const int fd : dead) {
-        close_client(fd);
+    for (std::size_t c = 0; c < count; ++c) {
+        int n;
+        do {
+            n = ::sendmmsg(fds[c], msgs.data(), static_cast<unsigned>(batch_size_),
+                          MSG_DONTWAIT | MSG_NOSIGNAL);
+        } while (n < 0 && errno == EINTR);
+        const auto sent = n > 0 ? static_cast<std::size_t>(n) : 0;
+        // Partial sends are explicit loss, never an unbounded retry queue.
+        dropped_frames_.fetch_add(batch_size_ - sent, std::memory_order_relaxed);
+        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != ENOBUFS)
+            close_client(fds[c]);
     }
-    return delivered;
+    batch_size_ = 0;
 }
 
 std::size_t UdsServer::client_count() const noexcept {

@@ -9,7 +9,7 @@
 # inline enforcement; telemetry works without it (see the "NOTICE" log line).
 [Unit]
 Description=xSypher-Stream eBPF kernel telemetry collector
-Documentation=https://github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer
+Documentation=https://github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry
 After=systemd-udevd.service
 Before=xsypher-engine.service
 Wants=network.target

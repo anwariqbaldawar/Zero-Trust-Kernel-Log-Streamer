@@ -45,7 +45,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(HERE, '..');
 
 const REPO_OWNER = 'anwariqbaldawar';
-const REPO_NAME = 'Zero-Trust-Kernel-Log-Streamer';
+const REPO_NAME = 'xSypher-Stream-Zero-Trust-Kernel-log-Telemetry';
 const REPO_SLUG = `${REPO_OWNER}/${REPO_NAME}`;
 
 /**

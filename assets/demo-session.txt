@@ -8,7 +8,7 @@ PYTHONPATH=src python3 -m engine.main --simulate --enforce-kernel --quiet --simu
   metrics=http://0.0.0.0:9109/metrics   (Ctrl-C to stop)
 [2m  ------------------------------------------------------------------------------------[0m
 [36m  [..] simulation mode: no kernel, no collector socket[0m
-[32m  [ok] loaded 6 rules from /home/user/Zero-Trust-Kernel-Log-Streamer/config/rules.yaml; alert log /tmp/xsypher-a...
+[32m  [ok] loaded 6 rules from /home/user/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry/config/rules.yaml; alert log /tmp/xsypher-a...
 [36m  [..] audit hash chain verified (8769 record(s))[0m
 [32m  [ok] prometheus exporter listening on 0.0.0.0:9109/metrics[0m
 
@@ -59,7 +59,7 @@ PYTHONPATH=src python3 tests/simulate_mcp_attack.py --events 10000
   socket      : /tmp/xsypher-sim-2ida6wdb/stream.sock
   alert log   : /tmp/xsypher-sim-2ida6wdb/alerts.jsonl
   metrics     : http://127.0.0.1:46711/metrics
-  rules       : /home/user/Zero-Trust-Kernel-Log-Streamer/config/rules.yaml
+  rules       : /home/user/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry/config/rules.yaml
   benign evts : 10000
   chains      : 5 attack scenarios
   engine      : connected

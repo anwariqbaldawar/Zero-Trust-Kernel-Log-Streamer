@@ -97,7 +97,7 @@ if(CLANG_EXECUTABLE AND BPFTOOL_EXECUTABLE)
     COMMAND ${CLANG_EXECUTABLE}
             -g -O2 -target bpf
             -D__TARGET_ARCH_${XSYPHER_BPF_ARCH}
-            -Wall -Wextra -Wno-unused-parameter
+            -Wall -Wextra -Werror -Wno-unused-parameter
             -Wno-missing-declarations -Wno-comment
             ${LIBBPF_CFLAGS}
             -I${CMAKE_SOURCE_DIR}/include
@@ -192,6 +192,11 @@ if(PYTHON3_EXECUTABLE)
       COMMAND ${PYTHON3_EXECUTABLE} -m unittest tests/test_lineage_and_rules.py
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
   endif()
+
+  add_executable(uds_batch_test tests/uds_batch.cpp src/collector/uds_server.cpp)
+  target_include_directories(uds_batch_test PRIVATE include src/collector)
+  target_link_libraries(uds_batch_test PRIVATE Threads::Threads)
+  add_test(NAME uds_batch COMMAND uds_batch_test)
 
   add_test(NAME end_to_end_mcp_attack
     COMMAND ${PYTHON3_EXECUTABLE} tests/simulate_mcp_attack.py --events 2000

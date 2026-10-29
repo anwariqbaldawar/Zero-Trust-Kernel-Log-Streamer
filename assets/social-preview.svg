@@ -18,5 +18,5 @@
   <text x="96" y="392" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="19" fill="#38bdf8">execve  connect  openat  memfd_create  sched_process_exit</text>
   <text x="96" y="426" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="19" fill="#94a3b8">bprm_check_security  ·  socket_connect  ·  file_open</text>
   <text x="96" y="490" font-family="Verdana, Arial, DejaVu Sans, sans-serif" font-size="19" fill="#e6edf7">The decision is made in user space. The denial happens in the kernel.</text>
-  <text x="96" y="556" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="17" fill="#94a3b8">github.com/anwariqbaldawar/Zero-Trust-Kernel-Log-Streamer</text>
+  <text x="96" y="556" font-family="Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="17" fill="#94a3b8">github.com/anwariqbaldawar/xSypher-Stream-Zero-Trust-Kernel-log-Telemetry</text>
 </svg>
