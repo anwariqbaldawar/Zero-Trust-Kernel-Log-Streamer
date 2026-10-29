@@ -293,6 +293,12 @@ class MockCollector:
         self._conn: socket.socket | None = None
         self._reader: threading.Thread | None = None
         self._server = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        try:
+            buf_size = 4 * 1024 * 1024
+            self._server.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, buf_size)
+            self._server.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, buf_size)
+        except OSError:
+            pass
         self._server.settimeout(30.0)
         if os.path.exists(path):
             os.unlink(path)

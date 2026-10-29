@@ -187,6 +187,15 @@ struct {
     __type(value, struct lineage_state_t);
 } lineage_map SEC(".maps");
 
+/* Dedicated unevictable map for tainted MCP/AI lineages to defend against
+ * adversarial LRU eviction floods. */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 16384);
+    __type(key, __u32);   /* tgid */
+    __type(value, struct lineage_state_t);
+} pinned_taint_map SEC(".maps");
+
 /* Protected PIDs (collector + engine) and their shutdown tokens. */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -459,7 +468,12 @@ static __always_inline int shutdown_token_set(void)
 static __always_inline struct lineage_state_t lineage_of(__u32 tgid)
 {
     struct lineage_state_t lin = {};
-    struct lineage_state_t *lp = bpf_map_lookup_elem(&lineage_map, &tgid);
+    /* 1. Check unevictable pinned_taint_map first */
+    struct lineage_state_t *lp = bpf_map_lookup_elem(&pinned_taint_map, &tgid);
+    if (!lp) {
+        /* 2. Check transient lineage_map (LRU) */
+        lp = bpf_map_lookup_elem(&lineage_map, &tgid);
+    }
 
     if (lp) {
         lin = *lp;
@@ -473,7 +487,10 @@ static __always_inline struct lineage_state_t lineage_of(__u32 tgid)
 
         if (ppid && ppid != tgid) {
             struct lineage_state_t *plp =
-                bpf_map_lookup_elem(&lineage_map, &ppid);
+                bpf_map_lookup_elem(&pinned_taint_map, &ppid);
+            if (!plp) {
+                plp = bpf_map_lookup_elem(&lineage_map, &ppid);
+            }
             if (plp) {
                 lin = *plp;
                 lin.ppid = ppid;
@@ -486,6 +503,9 @@ static __always_inline struct lineage_state_t lineage_of(__u32 tgid)
 static __always_inline void lineage_store(__u32 tgid,
                                           const struct lineage_state_t *lin)
 {
+    if (lin && (lin->ai_runtime || lin->quarantine)) {
+        bpf_map_update_elem(&pinned_taint_map, &tgid, (void *)lin, BPF_ANY);
+    }
     bpf_map_update_elem(&lineage_map, &tgid, (void *)lin, BPF_ANY);
 }
 
@@ -514,7 +534,7 @@ static __always_inline char *path_scratch(void)
  * together with its length.  The scratch buffer is zeroed first so matching
  * never reads stale bytes.
  */
-static __always_inline char *resolve_path(struct path *p, int *out_len)
+static __always_inline char *resolve_path(const struct path *p, int *out_len)
 {
     char *scratch = path_scratch();
 
@@ -524,7 +544,7 @@ static __always_inline char *resolve_path(struct path *p, int *out_len)
         return 0;
     }
     __builtin_memset(scratch, 0, XSYPHER_PATH_BUF_LEN);
-    int n = bpf_d_path(p, scratch, XSYPHER_PATH_BUF_LEN);
+    int n = bpf_d_path((struct path *)p, scratch, XSYPHER_PATH_BUF_LEN);
 
     if (n <= 0) {
         *out_len = 0;
@@ -929,7 +949,9 @@ int BPF_PROG(xsypher_process_fork, struct task_struct *parent,
     if (child_tgid == 0 || child_tgid == parent_tgid)
         return 0;
 
-    pl = bpf_map_lookup_elem(&lineage_map, &parent_tgid);
+    pl = bpf_map_lookup_elem(&pinned_taint_map, &parent_tgid);
+    if (!pl)
+        pl = bpf_map_lookup_elem(&lineage_map, &parent_tgid);
     if (pl) {
         lin = *pl;
     } else {
@@ -999,6 +1021,7 @@ int xsypher_process_exit(struct sched_process_exit_ctx *ctx)
     if (BPF_CORE_READ(task, signal, live.counter) != 0)
         return 0;
     ev = reserve_event(EVENT_PROCESS_EXIT);
+    bpf_map_delete_elem(&pinned_taint_map, &tgid);
     bpf_map_delete_elem(&lineage_map, &tgid);
     bpf_map_delete_elem(&quarantined_pids_map, &tgid);
     if (!ev)

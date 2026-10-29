@@ -125,6 +125,10 @@ bool UdsServer::bind_socket(const std::string& path, std::string& error) {
         return false;
     }
 
+    const int buf_size = 4 * 1024 * 1024;
+    (void)::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size));
+    (void)::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
+
     // Remove a stale socket file left behind by an unclean shutdown.
     if (::unlink(path.c_str()) != 0 && errno != ENOENT) {
         error = "unlink: " + errno_text(errno);
@@ -246,6 +250,10 @@ void UdsServer::accept_clients() {
                          errno_text(errno).c_str());
             return;
         }
+
+        const int buf_size = 4 * 1024 * 1024;
+        (void)::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buf_size, sizeof(buf_size));
+        (void)::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
 
         bool reject = false;
         {

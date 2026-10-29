@@ -6,9 +6,17 @@ uname -a
 grep -qw bpf /sys/kernel/security/lsm
 test -r /sys/kernel/btf/vmlinux
 # Never permit the developer stub to stand in for real kernel types.
+if ! command -v bpftool >/dev/null 2>&1; then
+    for candidate in /usr/lib/linux-tools/*/bpftool; do
+        if [ -x "$candidate" ]; then
+            sudo ln -sf "$candidate" /usr/local/bin/bpftool
+            break
+        fi
+    done
+fi
 bpftool btf dump file /sys/kernel/btf/vmlinux format c > include/vmlinux.h
 cmake -S . -B build-kernel -DCMAKE_BUILD_TYPE=Release
 cmake --build build-kernel -j2
-cc -Wall -Wextra -Werror -Ibuild-kernel tests/kernel_load.c -lbpf -lelf -lz -o build-kernel/kernel-load
+cc -Wall -Wextra -Werror -Iinclude -Ibuild-kernel tests/kernel_load.c -lbpf -lelf -lz -o build-kernel/kernel-load
 build-kernel/kernel-load
 printf 'PASS: all CO-RE programs loaded and attached without fallback\n'

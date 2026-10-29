@@ -103,6 +103,7 @@ private:
     void destroy_skeleton();
     bool set_autoload_for_lsm(bool enable);
     void apply_runtime_defaults_locked();
+    void scan_preexisting_processes_locked();
 
     // Non-locking map mutations used by apply_runtime_defaults_locked() (which
     // runs while mutex_ is already held) and by the public wrappers below.

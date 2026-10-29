@@ -15,12 +15,16 @@ ring-buffer saturation and policy reloads. Load/attach CI is not a substitute fo
 
 ## Map policy contract
 
-`lineage_map` is a 65,536-entry LRU keyed by TGID. Fork propagates state before the child runs;
-exec classifies runtime basenames using `runtime_comms_map`. Existing runtime names are broad profiles,
-not authenticated identities: Python and Node workloads may be classified even when they are not agents.
-Processes already running at attachment are not recursively inventoried. LRU eviction can lose ancestry;
-this is not an adversarially lossless process tracking mechanism. Size the map for the workload and test
-pressure behavior before enabling enforcement. Renames and pre-existing processes need explicit review.
+`lineage_map` is a 65,536-entry LRU keyed by TGID. To defend against adversarial process-spawning pressure
+evicting critical security context, tainted AI/MCP root lineages are concurrently stored in a dedicated
+non-LRU `pinned_taint_map` (16,384-entry BPF_MAP_TYPE_HASH). Ancestor checks query `pinned_taint_map` first,
+ensuring tainted ancestry cannot be evicted by high-volume process churn.
+
+Fork propagates state before the child runs; exec classifies runtime basenames using `runtime_comms_map`.
+To eliminate cold-start gaps, `xsypher-collector` performs a startup `/proc` inventory that discovers already-running
+AI runtime processes and pre-populates `lineage_map` and `pinned_taint_map` before attaching LSM hooks.
+Existing runtime names are broad profiles, not authenticated identities: Python and Node workloads may be
+classified even when they are not agents. Renames and pre-existing processes need explicit review.
 
 The `egress_allowlist` HASH key is the 40-byte `egress_key_t` in `include/xsypher_abi.h`:
 

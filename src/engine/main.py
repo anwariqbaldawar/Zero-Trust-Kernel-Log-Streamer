@@ -176,6 +176,12 @@ class UdsTransport:
         while not self._closed:
             tries += 1
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+            try:
+                buf_size = 4 * 1024 * 1024
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, buf_size)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, buf_size)
+            except OSError:
+                pass
             sock.setblocking(False)
             try:
                 await loop.sock_connect(sock, self.path)

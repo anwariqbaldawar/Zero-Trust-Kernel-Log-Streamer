@@ -60,6 +60,7 @@ if(NOT LIBBPF_FOUND)
   set(LIBBPF_LIBRARIES ${LIBBPF_LIBRARY})
 endif()
 
+find_library(LIBBPF_REAL_LIB NAMES bpf REQUIRED)
 find_library(ELF_LIBRARY NAMES elf REQUIRED)
 find_library(ZLIB_LIBRARY NAMES z REQUIRED)
 find_package(Threads REQUIRED)
@@ -197,6 +198,13 @@ if(PYTHON3_EXECUTABLE)
   target_include_directories(uds_batch_test PRIVATE include src/collector)
   target_link_libraries(uds_batch_test PRIVATE Threads::Threads)
   add_test(NAME uds_batch COMMAND uds_batch_test)
+
+  if(HAVE_BPF_TOOLCHAIN)
+    add_executable(kernel_load tests/kernel_load.c)
+    target_include_directories(kernel_load PRIVATE include ${CMAKE_BINARY_DIR})
+    target_link_libraries(kernel_load PRIVATE ${LIBBPF_REAL_LIB} ${ELF_LIBRARY} ${ZLIB_LIBRARY})
+    add_dependencies(kernel_load xsypher_bpf)
+  endif()
 
   add_test(NAME end_to_end_mcp_attack
     COMMAND ${PYTHON3_EXECUTABLE} tests/simulate_mcp_attack.py --events 2000

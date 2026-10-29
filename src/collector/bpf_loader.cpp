@@ -3,6 +3,8 @@
 // bpf_loader.cpp - libbpf lifecycle + policy map handling.
 #include "bpf_loader.hpp"
 
+#include <dirent.h>
+#include <fcntl.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -348,7 +350,11 @@ void BpfLoader::apply_runtime_defaults_locked() {
         register_runtime_comm_locked(comm);
     }
 
-    // 4. Register the composite inode+device fingerprints of the known shell
+    // 4. Pre-populate lineage maps with already-running AI/MCP processes
+    //    to close the cold-start race before attaching LSM hooks.
+    scan_preexisting_processes_locked();
+
+    // 5. Register the composite inode+device fingerprints of the known shell
     //    / interpreter binaries (survives cp / rename / hardlink).
     for (const char* path : kRestrictedShellPaths) {
         struct stat st {};
@@ -359,9 +365,130 @@ void BpfLoader::apply_runtime_defaults_locked() {
                               static_cast<std::uint32_t>(st.st_dev));
     }
 
-    // 5. Protect the collector's own thread-group id so lsm/task_kill cannot
+    // 6. Protect the collector's own thread-group id so lsm/task_kill cannot
     //    terminate it before an authenticated shutdown token is supplied.
     protect_pid_locked(static_cast<std::uint32_t>(::getpid()), 0);
+}
+
+void BpfLoader::scan_preexisting_processes_locked() {
+    if (!skel_) {
+        return;
+    }
+
+    const int lineage_fd = bpf_map__fd(skel_->maps.lineage_map);
+    const int pinned_fd = bpf_map__fd(skel_->maps.pinned_taint_map);
+    if (lineage_fd < 0 && pinned_fd < 0) {
+        return;
+    }
+
+    DIR* proc = ::opendir("/proc");
+    if (!proc) {
+        return;
+    }
+
+    struct dirent* entry;
+    std::size_t seeded = 0;
+
+    while ((entry = ::readdir(proc)) != nullptr) {
+        if (entry->d_type != DT_DIR) {
+            continue;
+        }
+        char* end = nullptr;
+        unsigned long pid = std::strtoul(entry->d_name, &end, 10);
+        if (pid == 0 || *end != '\0') {
+            continue;
+        }
+
+        char comm_path[64];
+        std::snprintf(comm_path, sizeof(comm_path), "/proc/%lu/comm", pid);
+        char comm[MAX_COMM_LEN] = {};
+        int comm_fd = ::open(comm_path, O_RDONLY | O_CLOEXEC);
+        if (comm_fd < 0) {
+            continue;
+        }
+        ssize_t n = ::read(comm_fd, comm, sizeof(comm) - 1);
+        ::close(comm_fd);
+        if (n <= 0) {
+            continue;
+        }
+        while (n > 0 && (comm[n - 1] == '\n' || comm[n - 1] == '\r')) {
+            comm[--n] = '\0';
+        }
+
+        bool is_runtime = false;
+        for (const char* rcomm : kRuntimeComms) {
+            if (std::strcmp(comm, rcomm) == 0) {
+                is_runtime = true;
+                break;
+            }
+        }
+        if (!is_runtime) {
+            continue;
+        }
+
+        uint32_t ppid = 0;
+        char stat_path[64];
+        std::snprintf(stat_path, sizeof(stat_path), "/proc/%lu/stat", pid);
+        int stat_fd = ::open(stat_path, O_RDONLY | O_CLOEXEC);
+        if (stat_fd >= 0) {
+            char stat_buf[512] = {};
+            ssize_t sn = ::read(stat_fd, stat_buf, sizeof(stat_buf) - 1);
+            ::close(stat_fd);
+            if (sn > 0) {
+                const char* rparen = std::strrchr(stat_buf, ')');
+                if (rparen && *(rparen + 1) != '\0') {
+                    char state;
+                    unsigned long p = 0;
+                    if (std::sscanf(rparen + 2, "%c %lu", &state, &p) == 2) {
+                        ppid = static_cast<uint32_t>(p);
+                    }
+                }
+            }
+        }
+
+        uint64_t cgroup_id = 0;
+        char cgroup_path[64];
+        std::snprintf(cgroup_path, sizeof(cgroup_path), "/proc/%lu/cgroup", pid);
+        int cg_fd = ::open(cgroup_path, O_RDONLY | O_CLOEXEC);
+        if (cg_fd >= 0) {
+            char cg_buf[512] = {};
+            ssize_t cn = ::read(cg_fd, cg_buf, sizeof(cg_buf) - 1);
+            ::close(cg_fd);
+            if (cn > 0) {
+                char* line = std::strstr(cg_buf, "0::");
+                if (line) {
+                    char* cg_rel = line + 3;
+                    char* endline = std::strchr(cg_rel, '\n');
+                    if (endline) *endline = '\0';
+                    std::string full_path = std::string("/sys/fs/cgroup") + cg_rel;
+                    struct stat cst{};
+                    if (::stat(full_path.c_str(), &cst) == 0) {
+                        cgroup_id = static_cast<uint64_t>(cst.st_ino);
+                    }
+                }
+            }
+        }
+
+        lineage_state_t lin{};
+        lin.ppid = ppid;
+        lin.root_pid = static_cast<uint32_t>(pid);
+        lin.cgroup_id = cgroup_id;
+        lin.ai_runtime = 1;
+        lin.quarantine = 0;
+
+        const uint32_t key = static_cast<uint32_t>(pid);
+        if (pinned_fd >= 0) {
+            bpf_map_update_elem(pinned_fd, &key, &lin, BPF_ANY);
+        }
+        if (lineage_fd >= 0) {
+            bpf_map_update_elem(lineage_fd, &key, &lin, BPF_ANY);
+        }
+        seeded++;
+    }
+    ::closedir(proc);
+    if (seeded > 0) {
+        std::fprintf(stderr, "[xsypher] pre-populated %zu running AI/MCP processes into lineage maps\n", seeded);
+    }
 }
 
 void BpfLoader::unload() {

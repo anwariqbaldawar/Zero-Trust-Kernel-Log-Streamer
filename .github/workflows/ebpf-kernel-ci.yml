@@ -11,11 +11,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install native and QEMU tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang llvm cmake libbpf-dev libelf-dev zlib1g-dev linux-tools-common linux-tools-generic qemu-system-x86 virtme flex bison bc libssl-dev libncurses-dev
+          sudo apt-get install -y build-essential clang llvm cmake libbpf-dev libelf-dev zlib1g-dev linux-tools-common linux-tools-generic qemu-system-x86 flex bison bc libssl-dev libncurses-dev dwarves
+          sudo apt-get install -y virtme || sudo apt-get install -y virtme-ng || pip install --break-system-packages virtme-ng
       - name: Build Linux 6.12 with BPF LSM enabled
         run: |
           git clone --depth 1 --branch v6.12 https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
@@ -23,11 +24,10 @@ jobs:
           make defconfig
           scripts/config --enable BPF --enable BPF_SYSCALL --enable BPF_JIT --enable BPF_EVENTS --enable BPF_LSM --enable SECURITY --enable DEBUG_INFO --enable DEBUG_INFO_BTF --disable DEBUG_INFO_NONE --disable DEBUG_INFO_REDUCED --enable FTRACE --enable FTRACE_SYSCALLS
           make olddefconfig
-          sudo apt-get install -y dwarves
           make -j"$(nproc)" bzImage
       - name: Load and attach every program in QEMU (no simulation or fallback)
         run: |
-          sudo virtme-run --kimg "$RUNNER_TEMP/linux/arch/x86/boot/bzImage" --mods=none --rw --pwd --memory 2G --append 'lsm=lockdown,capability,yama,bpf' --script-sh 'bash scripts/kernel_ci.sh'
+          sudo virtme-run --kimg "$RUNNER_TEMP/linux/arch/x86/boot/bzImage" --mods=none --rw --pwd --memory 2G --append 'lsm=lockdown,capability,landlock,yama,bpf' --script-sh 'bash scripts/kernel_ci.sh'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
