@@ -622,7 +622,7 @@ Designed from day one for zero-overhead production co-location on mission-critic
 
 ```console
 $ make test
-61 passed, 3 warnings, 42 subtests passed in 0.26s
+61 passed, 42 subtests passed in 0.24s (0 warnings)
 
 $ make verify
   PASS  struct layouts identical in C and Python (656 736 32)

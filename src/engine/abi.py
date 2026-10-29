@@ -21,6 +21,7 @@ from __future__ import annotations
 import ctypes
 import socket
 import struct
+import sys
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -184,6 +185,8 @@ _I32 = ctypes.c_int32
 class KernelEvent(ctypes.LittleEndianStructure):
     """``struct kernel_event_t`` — 656 bytes."""
 
+    if sys.version_info >= (3, 14):
+        _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
         ("timestamp_ns", _U64),          # 0
@@ -224,6 +227,8 @@ class KernelEvent(ctypes.LittleEndianStructure):
 class WireEventMsg(ctypes.LittleEndianStructure):
     """``struct wire_event_msg_t`` — 736 bytes."""
 
+    if sys.version_info >= (3, 14):
+        _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
         ("magic", _U32),                 # 0
@@ -238,6 +243,8 @@ class WireEventMsg(ctypes.LittleEndianStructure):
 class WirePolicyCmd(ctypes.LittleEndianStructure):
     """``struct wire_policy_cmd_t`` — 32 bytes."""
 
+    if sys.version_info >= (3, 14):
+        _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
         ("magic", _U32),                 # 0
