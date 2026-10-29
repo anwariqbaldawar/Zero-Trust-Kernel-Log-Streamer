@@ -84,7 +84,7 @@ opens a socket.
 |---|---|---|
 | Which events matter | 5 eBPF tracepoints in the kernel | sees every syscall, no sampling, no agent in the workload |
 | Is this chain suspicious | Python engine, unprivileged | lineage graph plus declarative rules, readable and testable |
-| Refuse the operation | 3 BPF LSM hooks in the kernel | a `-EPERM` the workload cannot argument its way out of |
+| Refuse the operation | 5 BPF LSM hooks in the kernel | a `-EPERM` the workload cannot argument its way out of |
 
 ## Why classic security tools fail on AI agent hosts
 
@@ -660,7 +660,7 @@ fleet-wide management, a large maintained rule set, or policy that outlives one 
 bin/xsypher.mjs          zero-dependency bootstrapper: simulate, doctor, clone, run
 package.json             npm manifest, no dependencies, bin mapped to the bootstrapper
 include/xsypher_abi.h    normative binary ABI, static assertions on every size
-src/bpf/                 eBPF CO-RE: 5 tracepoints, 3 LSM hooks, 6 maps
+src/bpf/                 eBPF CO-RE: 5 tracepoints, 5 LSM hooks, 14 maps
 src/collector/           C++20: loader, cgroup resolver, UDS server, epoll reactor
 src/engine/              abi, lineage, rule_engine, mitigator, metrics, tui, main
 config/rules.yaml        the 6 shipped rules
