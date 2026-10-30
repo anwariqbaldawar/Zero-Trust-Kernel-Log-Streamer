@@ -53,8 +53,8 @@ const REPO_SLUG = `${REPO_OWNER}/${REPO_NAME}`;
  * from codeload for exactly that revision, so a compromised mirror or a
  * rewritten tag cannot change what this script executes.
  */
-const SOURCE_REV = '756ab2972f01a83ad8d33d7e0d4ba874db887d27';
-const SOURCE_SHA256 = '0aa38e2ab6623853ef8098443dcbe1b65dd5b39536a0842f10ae93944580040b';
+const SOURCE_REV = 'ec2e8dbe87e9f2184799f38da327b54212724e72';
+const SOURCE_SHA256 = 'd84730cc7ec56afebdf8d912ab41b206bdd1a70ebaafb6265d865f5bade40564';
 const SOURCE_TARBALL = `https://codeload.github.com/${REPO_SLUG}/tar.gz/${SOURCE_REV}`;
 
 const MIN_PYTHON = [3, 10];

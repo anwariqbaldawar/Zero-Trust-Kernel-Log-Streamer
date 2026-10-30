@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/kernel-5.10%2B-334155" alt="Kernel 5.10 or newer">
   <img src="https://img.shields.io/badge/python-3.10%2B-334155" alt="Python 3.10 or newer">
   <img src="https://img.shields.io/badge/node-18%2B-334155" alt="Node 18 or newer">
-  <img src="https://img.shields.io/badge/tests-61%20passing-15803d" alt="61 tests passing">
+  <img src="https://img.shields.io/badge/tests-63%20passing-15803d" alt="63 tests passing">
   <img src="https://img.shields.io/badge/coverage-71%25-0ea5e9" alt="71 percent line coverage of the engine by the pytest suite">
 </p>
 
@@ -213,7 +213,7 @@ ones in [docs/DETECTIONS.md](docs/DETECTIONS.md).
 | Unix Shell | [T1059.004](https://attack.mitre.org/techniques/T1059/004/) | `MCP_SHELL_BREAKOUT` | `execve` | quarantine cgroup, kill |
 | Application Layer Protocol (C2) | [T1071](https://attack.mitre.org/techniques/T1071/) | `SUSPICIOUS_OUTBOUND_C2_PORT` | `connect` | quarantine pid, block IPv4, kill |
 | Cloud Instance Metadata API | [T1552.005](https://attack.mitre.org/techniques/T1552/005/) | `CLOUD_IMDS_CREDENTIAL_THEFT` | `connect`, `lsm_block` | quarantine cgroup, block IPv4, kill |
-| `/etc/passwd` and `/etc/shadow` | [T1003.008](https://attack.mitre.org/techniques/T1003/008/) | `SENSITIVE_CREDENTIAL_HARVEST` | `openat` | quarantine pid, kill |
+| `/etc/passwd` and `/etc/shadow` | [T1003.008](https://attack.mitre.org/techniques/T1003/008/) | `SENSITIVE_CREDENTIAL_HARVEST` | `file_open` (LSM) | quarantine pid, kill |
 | Reflective Code Loading | [T1620](https://attack.mitre.org/techniques/T1620/) | `FILELESS_MEMFD_EXECUTION` | `memfd_create`, `execve` | quarantine cgroup, kill |
 | Ingress Tool Transfer | [T1105](https://attack.mitre.org/techniques/T1105/) | `MCP_RECON_OR_EXFIL_TOOL` | `execve` | quarantine pid, kill |
 
@@ -288,7 +288,7 @@ Bootstrap behaviour worth knowing:
 | `simulate --docker` | Prefer the local `xsypher-stream:<version>` image when it exists |
 
 On first use the CLI downloads the source snapshot for one pinned revision
-(`756ab2972f01a83ad8d33d7e0d4ba874db887d27`), checks its SHA-256 against the digest compiled into the
+(`ec2e8dbe87e9f2184799f38da327b54212724e72`), checks its SHA-256 against the digest compiled into the
 script, extracts it under `~/.xsypher/src/`, and creates the virtual environment there. A mismatch aborts
 before anything is extracted. If Node cannot verify the TLS chain (a TLS-inspecting proxy), the download is
 retried once through the system CA store with `curl`; the digest check still decides whether the bytes are
@@ -581,7 +581,7 @@ See [kernel validation and policy operations](docs/KERNEL-VALIDATION.md) for rem
 
 ```console
 $ make test
-61 passed, 42 subtests passed in 0.24s (0 warnings)
+63 passed, 42 subtests passed in 0.24s (0 warnings)
 
 $ make verify
   PASS  struct layouts identical in C and Python (656 736 32)
@@ -666,7 +666,7 @@ src/engine/              abi, lineage, rule_engine, mitigator, metrics, tui, mai
 config/rules.yaml        the 6 shipped rules
 deploy/                  Dockerfile, compose, DaemonSet, systemd units
 scripts/                 verification, docs checks, asset and demo generators
-tests/                   61 tests, 31 subtests, plus the end-to-end harness
+tests/                   63 tests, 42 subtests, plus the end-to-end harness
 docs/                    nine reference documents and eight figures
 assets/                  logo, banner, social preview, demo GIF and its transcript
 ```
@@ -694,8 +694,4 @@ The libbpf and bpftool maintainers, whose tooling this project depends on and wo
 Linux BPF LSM authors; and the eBPF community projects listed above, whose documentation set the bar this
 repository tries to meet.
 
-<sub>Deep reference: [threat model](docs/THREAT-MODEL.md) · [architecture](docs/ARCHITECTURE.md) ·
-[wire protocol](docs/WIRE-PROTOCOL.md) · [detections](docs/DETECTIONS.md) ·
-[enforcement](docs/ENFORCEMENT.md) · [configuration](docs/CONFIGURATION.md) ·
-[operations](docs/OPERATIONS.md) · [performance](docs/PERFORMANCE.md) · [contributing](CONTRIBUTING.md) ·
-[security policy](SECURITY.md)</sub>
+<sub>Deep reference: [threat model](docs/THREAT-MODEL.md) · [architecture](docs/ARCHITECTURE.md) · [wire protocol](docs/WIRE-PROTOCOL.md) · [detections](docs/DETECTIONS.md) · [enforcement](docs/ENFORCEMENT.md) · [configuration](docs/CONFIGURATION.md) · [operations](docs/OPERATIONS.md) · [performance](docs/PERFORMANCE.md) · [contributing](CONTRIBUTING.md) · [security policy](SECURITY.md)</sub>
